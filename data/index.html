@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Formulář pro odeslání dat</title>
+    
+
+<style>
+body { font-family: Arial, sans-serif; }
+.button {
+  display: inline-block;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  outline: none;
+  color: #fff;
+  background-color: #4CAF50;
+  border: none;
+  border-radius: 15px;
+  box-shadow: 0 4px #999;
+  margin: 5px;
+}
+.button:hover { background-color: #3e8e41 }
+.button:active {
+  background-color: #3e8e831f;
+  box-shadow: 0 5px #666;
+  transform: translateY(4px);
+}
+</style>
+</head>
+<body>
+<h1>Co chcete dělat:</h1>
+
+<form action="/submit" method="post">
+    <label for="date">Datum:</label>
+    <input type="date" id="date" name="date" required>
+    <br>
+    <label for="string">Text:</label>
+    <input type="text" id="string" name="string" required>
+    <br>
+    <label for="float">Číslo:</label>
+    <input type="number" id="float" name="float" step="any" required>
+    <br>
+    <input type="submit" value="Odeslat">
+</form>
+
+
+<a href="/on" class="button">oooo</a>
+<a href="/off" class="button">Off</a>
+</body>
+</html>

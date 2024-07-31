@@ -1,30 +1,41 @@
-#include <stdio.h>
-#include <string.h>
-#include "esp_log.h"
-#include "nvs_flash.h"
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "esp_netif.h"
-#include "esp_http_server.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "lwip/inet.h"
-#include "driver/gpio.h"
+#include "main.h"
+char *cti_druh_postriku()
+{
+    FILE *file = fopen(FILE_PATH2, "r");
+    if (!file)
+    {
+        ESP_LOGE(TAG, "Failed to open file for reading: %s", FILE_PATH2);
+        return NULL;
+    }
 
-#include "esp_vfs.h"
-#include "esp_vfs_fat.h"
-#include "esp_spiffs.h"
+    // Získání velikosti souboru
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-#define FILE_PATH "/spiffs/druh_postriku.txt"
+    // Alokace paměti pro obsah souboru
+    char *buffer = (char *)malloc(file_size + 1);
+    if (!buffer)
+    {
+        ESP_LOGE(TAG, "Failed to allocate memory for file content");
+        fclose(file);
+        return NULL;
+    }
 
-static const char *TAG = "HTTP_SERVER";
-static uint8_t led_state = 0;
-#define relePin GPIO_NUM_2
+    // Čtení souboru do bufferu
+    size_t bytes_read = fread(buffer, 1, file_size, file);
+    if (bytes_read != file_size)
+    {
+        ESP_LOGE(TAG, "Failed to read the complete file content");
+        free(buffer);
+        fclose(file);
+        return NULL;
+    }
+    buffer[file_size] = '\0'; // Přidání nulového terminátoru
 
-// WiFi SSID a heslo
-#define EXAMPLE_ESP_WIFI_SSID "TP-LINK_0D7A"
-#define EXAMPLE_ESP_WIFI_PASS "cabracina128"
-
+    fclose(file);
+    return buffer;
+}
 void init_spiffs(void)
 {
     esp_vfs_spiffs_conf_t conf = {
@@ -67,46 +78,43 @@ void init_spiffs(void)
 
 esp_err_t get_handler(httpd_req_t *req)
 {
-    const char resp[] = "<!DOCTYPE html>"
-                        "<html>"
-                        "<head>"
-                        "<style>"
-                        "body { font-family: Arial, sans-serif; }"
-                        ".button {"
-                        "  display: inline-block;"
-                        "  padding: 10px 20px;"
-                        "  font-size: 16px;"
-                        "  cursor: pointer;"
-                        "  text-align: center;"
-                        "  text-decoration: none;"
-                        "  outline: none;"
-                        "  color: #fff;"
-                        "  background-color: #4CAF50;"
-                        "  border: none;"
-                        "  border-radius: 15px;"
-                        "  box-shadow: 0 4px #999;"
-                        "  margin: 5px;"  // Add margin to create space between buttons
-                        "}"
-                        ".button:hover { background-color: #3e8e41 }"
-                        ".button:active {"
-                        "  background-color: #3e8e41;"
-                        "  box-shadow: 0 5px #666;"
-                        "  transform: translateY(4px);"
-                        "}"
-                        "</style>"
-                        "</head>"
-                        "<body>"
-                        "<h1>Co chcete delat:</h1>"
-                        "<a href=\"/on\" class=\"button\">On</a>"
-                        "<a href=\"/off\" class=\"button\">Off</a>"
-                        "</body>"
-                        "</html>";
+    FILE *file = fopen(FILE_PATH, "r");
+    if (file == NULL)
+    {
+        ESP_LOGE("FILE", "Failed to open file for reading");
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
 
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    // Získání velikosti souboru
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
+    // Alokace paměti pro obsah souboru
+    char *buffer = (char *)malloc(file_size + 1);
+    if (buffer == NULL)
+    {
+        ESP_LOGE("FILE", "Failed to allocate memory for file content");
+        fclose(file);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    // Čtení souboru do bufferu
+    fread(buffer, 1, file_size, file);
+    buffer[file_size] = '\0'; // Přidání nulového terminátoru
+
+    fclose(file);
+
+    // Odeslání obsahu souboru jako HTTP odpověď
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+
+    httpd_resp_send(req, buffer, file_size);
+
+    free(buffer);
     return ESP_OK;
 }
-
 esp_err_t on(httpd_req_t *req)
 {
     gpio_set_level(relePin, 1);
@@ -125,11 +133,18 @@ esp_err_t on(httpd_req_t *req)
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
-
 esp_err_t off(httpd_req_t *req)
 {
     gpio_set_level(relePin, 0);
     led_state = 0;
+
+    // Načtení hodnoty ze souboru
+    char *druhPostriku = cti_druh_postriku();
+    // Použití načtené hodnoty ve vašem programu
+    ESP_LOGI(TAG2, "Loaded value: %s", druhPostriku);
+    // Například použití hodnoty k nějaké logice
+    free(druhPostriku);
+
     const char resp[] = "<h1>OFF:</h1>"
                         "<a href=\"/on\">On</a>";
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
@@ -198,7 +213,7 @@ esp_err_t handle_post(httpd_req_t *req)
         decoded_value[j] = '\0';
 
         // Nyní můžeme uložit `decoded_value` do SPIFFS
-        FILE *f = fopen(FILE_PATH, "w");
+        FILE *f = fopen(FILE_PATH2, "w");
         if (f == NULL)
         {
             ESP_LOGE("SPIFFS", "Failed to open file for writing");
@@ -225,19 +240,16 @@ httpd_uri_t uri_get = {
     .method = HTTP_GET,
     .handler = get_handler,
     .user_ctx = NULL};
-
 httpd_uri_t uri_on = {
     .uri = "/on",
     .method = HTTP_GET,
     .handler = on,
     .user_ctx = NULL};
-
 httpd_uri_t uri_off = {
     .uri = "/off",
     .method = HTTP_GET,
     .handler = off,
     .user_ctx = NULL};
-
 httpd_uri_t uri_post = {
     .uri = "/submit",
     .method = HTTP_POST,
@@ -342,4 +354,13 @@ void app_main(void)
     init_spiffs();
     // Start the web server
     start_webserver();
+
+    // // Načtení hodnoty ze souboru
+    // char *druhPostriku = cti_druh_postriku();
+    // // Použití načtené hodnoty ve vašem programu
+    // ESP_LOGI(TAG2, "Loaded value: %s", druhPostriku);
+
+    // // Například použití hodnoty k nějaké logice
+
+    // free(druhPostriku);
 }
