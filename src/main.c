@@ -11,6 +11,12 @@
 #include "lwip/inet.h"
 #include "driver/gpio.h"
 
+#include "esp_vfs.h"
+#include "esp_vfs_fat.h"
+#include "esp_spiffs.h"
+
+#define FILE_PATH "/spiffs/druh_postriku.txt"
+
 static const char *TAG = "HTTP_SERVER";
 static uint8_t led_state = 0;
 #define relePin GPIO_NUM_2
@@ -19,17 +25,84 @@ static uint8_t led_state = 0;
 #define EXAMPLE_ESP_WIFI_SSID "TP-LINK_0D7A"
 #define EXAMPLE_ESP_WIFI_PASS "cabracina128"
 
+void init_spiffs(void)
+{
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/spiffs",
+        .partition_label = NULL,
+        .max_files = 5,
+        .format_if_mount_failed = true};
+
+    // Inicializace SPIFFS
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret != ESP_OK)
+    {
+        if (ret == ESP_FAIL)
+        {
+            ESP_LOGE("SPIFFS", "Failed to mount or format filesystem");
+        }
+        else if (ret == ESP_ERR_NOT_FOUND)
+        {
+            ESP_LOGE("SPIFFS", "Failed to find SPIFFS partition");
+        }
+        else
+        {
+            ESP_LOGE("SPIFFS", "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info(NULL, &total, &used);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE("SPIFFS", "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
+    }
+    else
+    {
+        ESP_LOGI("SPIFFS", "Partition size: total: %d, used: %d", total, used);
+    }
+}
+
 esp_err_t get_handler(httpd_req_t *req)
 {
-    const char on_resp[] = "<h1>ON:</h1>"
-                           "<a href=\"/off\">Off</a>";
-    const char off_resp[] = "<h1>OFF:</h1>"
-                            "<a href=\"/on\">On</a>";
+    const char resp[] = "<!DOCTYPE html>"
+                        "<html>"
+                        "<head>"
+                        "<style>"
+                        "body { font-family: Arial, sans-serif; }"
+                        ".button {"
+                        "  display: inline-block;"
+                        "  padding: 10px 20px;"
+                        "  font-size: 16px;"
+                        "  cursor: pointer;"
+                        "  text-align: center;"
+                        "  text-decoration: none;"
+                        "  outline: none;"
+                        "  color: #fff;"
+                        "  background-color: #4CAF50;"
+                        "  border: none;"
+                        "  border-radius: 15px;"
+                        "  box-shadow: 0 4px #999;"
+                        "  margin: 5px;"  // Add margin to create space between buttons
+                        "}"
+                        ".button:hover { background-color: #3e8e41 }"
+                        ".button:active {"
+                        "  background-color: #3e8e41;"
+                        "  box-shadow: 0 5px #666;"
+                        "  transform: translateY(4px);"
+                        "}"
+                        "</style>"
+                        "</head>"
+                        "<body>"
+                        "<h1>Co chcete delat:</h1>"
+                        "<a href=\"/on\" class=\"button\">On</a>"
+                        "<a href=\"/off\" class=\"button\">Off</a>"
+                        "</body>"
+                        "</html>";
 
-    if (led_state == 0)
-        httpd_resp_send(req, off_resp, HTTPD_RESP_USE_STRLEN);
-    else
-        httpd_resp_send(req, on_resp, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     return ESP_OK;
 }
@@ -38,8 +111,17 @@ esp_err_t on(httpd_req_t *req)
 {
     gpio_set_level(relePin, 1);
     led_state = 1;
-    const char resp[] = "<h1>ON:</h1>"
-                        "<a href=\"/off\">Off</a>";
+
+    // Nastavení hlavičky Content-Type na UTF-8
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+
+    const char resp[] =
+        "<h1>ON:</h1>"
+        "<form action=\"/submit\" method=\"post\">"
+        "Druh postřiku: <input type=\"text\" name=\"druh_postriku\" />"
+        "<input type=\"submit\" value=\"Submit\" />"
+        "</form>"
+        "<a href=\"/off\">Off</a>";
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
@@ -51,6 +133,90 @@ esp_err_t off(httpd_req_t *req)
     const char resp[] = "<h1>OFF:</h1>"
                         "<a href=\"/on\">On</a>";
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+// Funkce pro zpracování POST požadavku a uložení do SPIFFS
+esp_err_t handle_post(httpd_req_t *req)
+{
+    char buf[100];
+    int ret = 0; // Inicializace ret
+    int remaining = req->content_len;
+
+    // Přečtěte data z požadavku
+    while (remaining > 0)
+    {
+        ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf)));
+        if (ret <= 0)
+        {
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT)
+            {
+                continue;
+            }
+            return ESP_FAIL;
+        }
+        remaining -= ret;
+    }
+
+    // Přidejte nulový terminátor na konec přijatého řetězce
+    buf[ret] = '\0';
+
+    // Vyhledejte hodnotu parametru "druh_postriku"
+    char *param = strstr(buf, "druh_postriku=");
+    if (param != NULL)
+    {
+        param += strlen("druh_postriku=");
+
+        // Pokud se parameter nachází, získáme jeho hodnotu
+        char *end = strchr(param, '&');
+        if (end != NULL)
+        {
+            *end = '\0';
+        }
+
+        // Ošetřete případ, kdy by hodnota mohla obsahovat URL zakódované znaky
+        char decoded_value[100];
+        int i, j;
+        for (i = 0, j = 0; param[i]; i++)
+        {
+            if (param[i] == '%')
+            {
+                int val;
+                sscanf(&param[i + 1], "%2x", &val);
+                decoded_value[j++] = (char)val;
+                i += 2;
+            }
+            else if (param[i] == '+')
+            {
+                decoded_value[j++] = ' ';
+            }
+            else
+            {
+                decoded_value[j++] = param[i];
+            }
+        }
+        decoded_value[j] = '\0';
+
+        // Nyní můžeme uložit `decoded_value` do SPIFFS
+        FILE *f = fopen(FILE_PATH, "w");
+        if (f == NULL)
+        {
+            ESP_LOGE("SPIFFS", "Failed to open file for writing");
+            return ESP_FAIL;
+        }
+        fprintf(f, "%s", decoded_value);
+        fclose(f);
+
+        ESP_LOGI("SPIFFS", "File written: %s", decoded_value);
+    }
+
+    // Odpovězte uživateli
+    // Nastavení hlavičky Content-Type na UTF-8
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+
+    const char response[] = "<h1>Data přijata a uložena</h1><a href=\"/\">Back</a>";
+    httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
+
     return ESP_OK;
 }
 
@@ -72,11 +238,17 @@ httpd_uri_t uri_off = {
     .handler = off,
     .user_ctx = NULL};
 
+httpd_uri_t uri_post = {
+    .uri = "/submit",
+    .method = HTTP_POST,
+    .handler = handle_post,
+    .user_ctx = NULL};
 
 // Start HTTP server
 static httpd_handle_t start_webserver(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+
     httpd_handle_t server = NULL;
 
     if (httpd_start(&server, &config) == ESP_OK)
@@ -84,6 +256,8 @@ static httpd_handle_t start_webserver(void)
         httpd_register_uri_handler(server, &uri_get);
         httpd_register_uri_handler(server, &uri_on);
         httpd_register_uri_handler(server, &uri_off);
+        // Přidejte tuto URI do seznamu URI handlerů
+        httpd_register_uri_handler(server, &uri_post);
     }
 
     return server;
@@ -103,8 +277,8 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
-        //ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        //ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
+        // ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        // ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
     }
 }
 
@@ -164,7 +338,8 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
-
+    // Inicializace SPIFFS
+    init_spiffs();
     // Start the web server
     start_webserver();
 }
