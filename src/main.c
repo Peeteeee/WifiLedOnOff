@@ -141,7 +141,7 @@ esp_err_t off(httpd_req_t *req)
     // Načtení hodnoty ze souboru
     char *druhPostriku = cti_druh_postriku();
     // Použití načtené hodnoty ve vašem programu
-    ESP_LOGI(TAG2, "Loaded value: %s", druhPostriku);
+    ESP_LOGI(TAG2, "Loaded value:%s", druhPostriku);
     // Například použití hodnoty k nějaké logice
     free(druhPostriku);
 
@@ -176,43 +176,70 @@ esp_err_t handle_post(httpd_req_t *req)
     // Přidejte nulový terminátor na konec přijatého řetězce
     buf[ret] = '\0';
 
-    // Vyhledejte hodnotu parametru "druh_postriku"
-    char *param = strstr(buf, "druh_postriku=");
-    if (param != NULL)
+    ESP_LOGI(TAG2, "Prislo z html: %s", buf);
+    // Prislo z html: date=2024-04-01&string=ahoj&float=0.6
+    char decoded_value[100] = "";
+    char textPredHledanymRetezcem[20];
+
+    for (int i = 0; i < 3; i++)
     {
-        param += strlen("druh_postriku=");
-
-        // Pokud se parameter nachází, získáme jeho hodnotu
-        char *end = strchr(param, '&');
-        if (end != NULL)
+        switch (i)
         {
-            *end = '\0';
+        case 0:
+            strcpy(textPredHledanymRetezcem, "string=");
+            break;
+        case 1:
+            strcpy(textPredHledanymRetezcem, "date=");
+            break;
+        case 2:
+            strcpy(textPredHledanymRetezcem, "float=");
+            break;
+        default:
+            break;
         }
 
-        // Ošetřete případ, kdy by hodnota mohla obsahovat URL zakódované znaky
-        char decoded_value[100];
-        int i, j;
-        for (i = 0, j = 0; param[i]; i++)
+        ESP_LOGI("SPIFFS", "textPredHledanymRetezcem: %s", textPredHledanymRetezcem);
+
+        // Vyhledejte hodnotu parametru "string"
+        char *param = strstr(buf, textPredHledanymRetezcem);
+        if (param != NULL)
         {
-            if (param[i] == '%')
+        ESP_LOGI("SPIFFS", "param: %ch", *param);
+            param += strlen(textPredHledanymRetezcem);
+
+            // Pokud se parameter nachází, získáme jeho hodnotu
+            char *end = 0;
+
+            switch (i)
             {
-                int val;
-                sscanf(&param[i + 1], "%2x", &val);
-                decoded_value[j++] = (char)val;
-                i += 2;
+            case 0:
+                end = strchr(param, '&');
+                break;
+            case 1:
+                end = strchr(param, '&');
+                break;
+            case 2:
+            end = strlen(buf) - 1;
+
+                break;
+            default:
+                break;
             }
-            else if (param[i] == '+')
+
+            if (end != NULL)
             {
-                decoded_value[j++] = ' ';
+                *end = '\0';
             }
-            else
-            {
-                decoded_value[j++] = param[i];
-            }
+
         }
-        decoded_value[j] = '\0';
 
         // Nyní můžeme uložit `decoded_value` do SPIFFS
+
+        strcat(decoded_value, param);
+
+    }
+    ESP_LOGI("SPIFFS", "decoded_value:%s", decoded_value);
+
         FILE *f = fopen(FILE_PATH2, "w");
         if (f == NULL)
         {
@@ -222,8 +249,7 @@ esp_err_t handle_post(httpd_req_t *req)
         fprintf(f, "%s", decoded_value);
         fclose(f);
 
-        ESP_LOGI("SPIFFS", "File written: %s", decoded_value);
-    }
+        ESP_LOGI("SPIFFS", "File written:%s", decoded_value);
 
     // Odpovězte uživateli
     // Nastavení hlavičky Content-Type na UTF-8
@@ -350,17 +376,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
-    // Inicializace SPIFFS
     init_spiffs();
-    // Start the web server
     start_webserver();
 
-    // // Načtení hodnoty ze souboru
-    // char *druhPostriku = cti_druh_postriku();
-    // // Použití načtené hodnoty ve vašem programu
-    // ESP_LOGI(TAG2, "Loaded value: %s", druhPostriku);
-
-    // // Například použití hodnoty k nějaké logice
-
-    // free(druhPostriku);
 }
