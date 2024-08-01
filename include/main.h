@@ -17,13 +17,16 @@
 #include "esp_vfs.h"
 #include "esp_vfs_fat.h"
 #include "esp_spiffs.h"
+#include "cJSON.h"
 
-
-#define FILE_PATH "/spiffs/index.html" // Cesta k HTML souboru
+#define FILE_PATH "/spiffs/index.html"
 #define FILE_PATH2 "/spiffs/druh_postriku.txt"
+
+#define IP_ADRESA_ESP32 "192.168.0.111"
 
 static const char *TAG = "HTTP_SERVER";
 static const char *TAG2 = "LOAD";
+static const char *TAG3 = "ESP32_JSON";
 
 static uint8_t led_state = 0;
 #define relePin GPIO_NUM_2
@@ -31,7 +34,10 @@ static uint8_t led_state = 0;
 // WiFi SSID a heslo
 #define EXAMPLE_ESP_WIFI_SSID "TP-LINK_0D7A"
 #define EXAMPLE_ESP_WIFI_PASS "cabracina128"
-
-
+#define MAX_DATA_LENGTH 256
+// Struktura pro uložení textu
+typedef struct {
+    char text[MAX_DATA_LENGTH];
+} Data;
 
 #endif

@@ -75,6 +75,7 @@ void init_spiffs(void)
         ESP_LOGI("SPIFFS", "Partition size: total: %d, used: %d", total, used);
     }
 }
+static Data data;
 
 esp_err_t get_handler(httpd_req_t *req)
 {
@@ -125,9 +126,9 @@ esp_err_t on(httpd_req_t *req)
 
     const char resp[] =
         "<h1>ON:</h1>"
-        "<form action=\"/submit\" method=\"post\">"
+        "<form action=\"/odeslat\" method=\"post\">"
         "Druh postřiku: <input type=\"text\" name=\"druh_postriku\" />"
-        "<input type=\"submit\" value=\"Submit\" />"
+        "<input type=\"odeslat\" value=\"odeslat\" />"
         "</form>"
         "<a href=\"/off\">Off</a>";
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
@@ -151,116 +152,52 @@ esp_err_t off(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Funkce pro zpracování POST požadavku a uložení do SPIFFS
-esp_err_t handle_post(httpd_req_t *req)
-{
-    char buf[100];
-    int ret = 0; // Inicializace ret
-    int remaining = req->content_len;
-
-    // Přečtěte data z požadavku
-    while (remaining > 0)
-    {
-        ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf)));
-        if (ret <= 0)
-        {
-            if (ret == HTTPD_SOCK_ERR_TIMEOUT)
-            {
-                continue;
-            }
+esp_err_t post_handler(httpd_req_t *req) {
+    // Buffer pro příjem dat
+    char buf[512];
+    int ret, total_len = 0;
+    
+    // Přečteme všechna data z požadavku
+    while ((ret = httpd_req_recv(req, buf + total_len, sizeof(buf) - total_len)) > 0) {
+        total_len += ret;
+        if (total_len >= sizeof(buf)) {
+            ESP_LOGE(TAG3, "Buffer overflow");
+            httpd_resp_send_500(req);
             return ESP_FAIL;
         }
-        remaining -= ret;
+    }
+    
+    if (ret < 0) {
+        ESP_LOGE(TAG3, "Failed to receive data");
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    
+    buf[total_len] = '\0';  // Null-terminate the buffer
+    ESP_LOGI(TAG3, "Received data:%s", buf);
+
+    // Parsování JSON dat
+    cJSON *json = cJSON_Parse(buf);
+    if (json) {
+        cJSON *text_item = cJSON_GetObjectItem(json, "text");
+        if (cJSON_IsString(text_item) && (text_item->valuestring != NULL)) {
+            snprintf(data.text, sizeof(data.text), "%s", text_item->valuestring);
+            ESP_LOGI(TAG, "Parsed text:%s", data.text);
+        } else {
+            ESP_LOGE(TAG, "Invalid or missing 'text' field in JSON");
+        }
+        cJSON_Delete(json);
+    } else {
+        ESP_LOGE(TAG3, "Failed to parse JSON");
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
     }
 
-    // Přidejte nulový terminátor na konec přijatého řetězce
-    buf[ret] = '\0';
-
-    ESP_LOGI(TAG2, "Prislo z html: %s", buf);
-    // Prislo z html: date=2024-04-01&string=ahoj&float=0.6
-    char decoded_value[100] = "";
-    char textPredHledanymRetezcem[20];
-
-    for (int i = 0; i < 3; i++)
-    {
-        switch (i)
-        {
-        case 0:
-            strcpy(textPredHledanymRetezcem, "string=");
-            break;
-        case 1:
-            strcpy(textPredHledanymRetezcem, "date=");
-            break;
-        case 2:
-            strcpy(textPredHledanymRetezcem, "float=");
-            break;
-        default:
-            break;
-        }
-
-        ESP_LOGI("SPIFFS", "textPredHledanymRetezcem: %s", textPredHledanymRetezcem);
-
-        // Vyhledejte hodnotu parametru "string"
-        char *param = strstr(buf, textPredHledanymRetezcem);
-        if (param != NULL)
-        {
-        ESP_LOGI("SPIFFS", "param: %ch", *param);
-            param += strlen(textPredHledanymRetezcem);
-
-            // Pokud se parameter nachází, získáme jeho hodnotu
-            char *end = 0;
-
-            switch (i)
-            {
-            case 0:
-                end = strchr(param, '&');
-                break;
-            case 1:
-                end = strchr(param, '&');
-                break;
-            case 2:
-            end = strlen(buf) - 1;
-
-                break;
-            default:
-                break;
-            }
-
-            if (end != NULL)
-            {
-                *end = '\0';
-            }
-
-        }
-
-        // Nyní můžeme uložit `decoded_value` do SPIFFS
-
-        strcat(decoded_value, param);
-
-    }
-    ESP_LOGI("SPIFFS", "decoded_value:%s", decoded_value);
-
-        FILE *f = fopen(FILE_PATH2, "w");
-        if (f == NULL)
-        {
-            ESP_LOGE("SPIFFS", "Failed to open file for writing");
-            return ESP_FAIL;
-        }
-        fprintf(f, "%s", decoded_value);
-        fclose(f);
-
-        ESP_LOGI("SPIFFS", "File written:%s", decoded_value);
-
-    // Odpovězte uživateli
-    // Nastavení hlavičky Content-Type na UTF-8
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-
-    const char response[] = "<h1>Data přijata a uložena</h1><a href=\"/\">Back</a>";
-    httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
-
+    // Odpověď na POST požadavek
+    const char resp[] = "{\"status\":\"success\"}";
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
-
 httpd_uri_t uri_get = {
     .uri = "/",
     .method = HTTP_GET,
@@ -277,12 +214,11 @@ httpd_uri_t uri_off = {
     .handler = off,
     .user_ctx = NULL};
 httpd_uri_t uri_post = {
-    .uri = "/submit",
+    .uri = "/odeslat",
     .method = HTTP_POST,
-    .handler = handle_post,
+    .handler = post_handler,
     .user_ctx = NULL};
 
-// Start HTTP server
 static httpd_handle_t start_webserver(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -301,7 +237,6 @@ static httpd_handle_t start_webserver(void)
     return server;
 }
 
-// Event handler for WiFi events
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
@@ -378,5 +313,4 @@ void app_main(void)
     wifi_init_sta();
     init_spiffs();
     start_webserver();
-
 }
