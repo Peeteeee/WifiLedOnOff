@@ -75,8 +75,64 @@ void init_spiffs(void)
         ESP_LOGI("SPIFFS", "Partition size: total: %d, used: %d", total, used);
     }
 }
-static Data data;
+PostrikData postrik_data;
+void parse_json(const char *json_str, PostrikData *data) {
+    // Načtení JSON řetězce do cJSON struktury
+    cJSON *json = cJSON_Parse(json_str);
+    if (json == NULL) {
+        ESP_LOGE(TAG4, "Chyba při parsování JSON");
+        return;
+    }
 
+    // Získání jednotlivých hodnot
+    cJSON *nazev_pripravku = cJSON_GetObjectItem(json, "pripravek");
+    cJSON *osetrovana_plodina = cJSON_GetObjectItem(json, "plodina");
+    cJSON *mnozstvi_postriku = cJSON_GetObjectItem(json, "mnozstvi");
+    cJSON *pomer_michani = cJSON_GetObjectItem(json, "pomer");
+    cJSON *doba_postriku = cJSON_GetObjectItem(json, "dobaPostriku");
+
+    // Kontrola a zpracování hodnot
+    if (cJSON_IsString(nazev_pripravku) && (nazev_pripravku->valuestring != NULL)) {
+        // Uložení názvu přípravku
+        strncpy(data->nazev_pripravku, nazev_pripravku->valuestring, sizeof(data->nazev_pripravku) - 1);
+        data->nazev_pripravku[sizeof(data->nazev_pripravku) - 1] = '\0'; // Null terminátor
+    } else {
+        ESP_LOGE(TAG4, "Chybějící nebo neplatný 'NazevPripravku'");
+    }
+
+    if (cJSON_IsString(osetrovana_plodina) && (osetrovana_plodina->valuestring != NULL)) {
+        // Uložení ošetřované plodiny
+        strncpy(data->osetrovana_plodina, osetrovana_plodina->valuestring, sizeof(data->osetrovana_plodina) - 1);
+        data->osetrovana_plodina[sizeof(data->osetrovana_plodina) - 1] = '\0'; // Null terminátor
+    } else {
+        ESP_LOGE(TAG4, "Chybějící nebo neplatný 'OsetrovanaPlodina'");
+    }
+
+    if (cJSON_IsNumber(mnozstvi_postriku)) {
+        // Uložení množství postřiku
+        data->mnozstvi_postriku = mnozstvi_postriku->valuedouble;
+    } else {
+        ESP_LOGE(TAG4, "Chybějící nebo neplatný 'MnozstviPostriku'");
+    }
+
+    if (cJSON_IsNumber(pomer_michani)) {
+        // Uložení poměru míchání
+        data->pomer_michani = pomer_michani->valuedouble;
+    } else {
+        ESP_LOGE(TAG4, "Chybějící nebo neplatný 'PomerMichani'");
+    }
+
+    if (cJSON_IsString(doba_postriku) && (doba_postriku->valuestring != NULL)) {
+        // Uložení doby postřiku
+        strncpy(data->doba_postriku, doba_postriku->valuestring, sizeof(data->doba_postriku) - 1);
+        data->doba_postriku[sizeof(data->doba_postriku) - 1] = '\0'; // Null terminátor
+    } else {
+        ESP_LOGE(TAG4, "Chybějící nebo neplatný 'DobaPostriku'");
+    }
+
+    // Uvolnění cJSON struktury
+    cJSON_Delete(json);
+}
 esp_err_t get_handler(httpd_req_t *req)
 {
     FILE *file = fopen(FILE_PATH, "r");
@@ -116,82 +172,34 @@ esp_err_t get_handler(httpd_req_t *req)
     free(buffer);
     return ESP_OK;
 }
-esp_err_t on(httpd_req_t *req)
+esp_err_t post_handler(httpd_req_t *req)
 {
-    gpio_set_level(relePin, 1);
-    led_state = 1;
-
-    // Nastavení hlavičky Content-Type na UTF-8
-    httpd_resp_set_type(req, "text/html; charset=UTF-8");
-
-    const char resp[] =
-        "<h1>ON:</h1>"
-        "<form action=\"/odeslat\" method=\"post\">"
-        "Druh postřiku: <input type=\"text\" name=\"druh_postriku\" />"
-        "<input type=\"odeslat\" value=\"odeslat\" />"
-        "</form>"
-        "<a href=\"/off\">Off</a>";
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-    return ESP_OK;
-}
-esp_err_t off(httpd_req_t *req)
-{
-    gpio_set_level(relePin, 0);
-    led_state = 0;
-
-    // Načtení hodnoty ze souboru
-    char *druhPostriku = cti_druh_postriku();
-    // Použití načtené hodnoty ve vašem programu
-    ESP_LOGI(TAG2, "Loaded value:%s", druhPostriku);
-    // Například použití hodnoty k nějaké logice
-    free(druhPostriku);
-
-    const char resp[] = "<h1>OFF:</h1>"
-                        "<a href=\"/on\">On</a>";
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
-    return ESP_OK;
-}
-
-esp_err_t post_handler(httpd_req_t *req) {
-    // Buffer pro příjem dat
+    // Příprava bufferu pro příjem dat
     char buf[512];
-    int ret, total_len = 0;
-    
-    // Přečteme všechna data z požadavku
-    while ((ret = httpd_req_recv(req, buf + total_len, sizeof(buf) - total_len)) > 0) {
-        total_len += ret;
-        if (total_len >= sizeof(buf)) {
-            ESP_LOGE(TAG3, "Buffer overflow");
-            httpd_resp_send_500(req);
-            return ESP_FAIL;
-        }
-    }
-    
-    if (ret < 0) {
-        ESP_LOGE(TAG3, "Failed to receive data");
-        httpd_resp_send_500(req);
-        return ESP_FAIL;
-    }
-    
-    buf[total_len] = '\0';  // Null-terminate the buffer
-    ESP_LOGI(TAG3, "Received data:%s", buf);
+    int ret;
 
-    // Parsování JSON dat
-    cJSON *json = cJSON_Parse(buf);
-    if (json) {
-        cJSON *text_item = cJSON_GetObjectItem(json, "text");
-        if (cJSON_IsString(text_item) && (text_item->valuestring != NULL)) {
-            snprintf(data.text, sizeof(data.text), "%s", text_item->valuestring);
-            ESP_LOGI(TAG, "Parsed text:%s", data.text);
-        } else {
-            ESP_LOGE(TAG, "Invalid or missing 'text' field in JSON");
+    // Čtení dat z požadavku
+    ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret < 0) {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+            ESP_LOGE(TAG4, "Timeout při čtení dat");
         }
-        cJSON_Delete(json);
-    } else {
-        ESP_LOGE(TAG3, "Failed to parse JSON");
-        httpd_resp_send_500(req);
         return ESP_FAIL;
     }
+
+    // Null-terminátor pro buffer
+    buf[ret] = '\0';
+
+    // Volání funkce pro zpracování JSON
+    parse_json(buf, &postrik_data);
+    ESP_LOGI(TAG4, "buf:%s", buf);
+
+    // Výpis výsledku
+    ESP_LOGI(TAG4, "Název Přípravku:%s", postrik_data.nazev_pripravku);
+    ESP_LOGI(TAG4, "Ošetřovaná Plodina:%s", postrik_data.osetrovana_plodina);
+    ESP_LOGI(TAG4, "Množství Postřiku [l]:%.2f", postrik_data.mnozstvi_postriku);
+    ESP_LOGI(TAG4, "Poměr Míchání [g/l]:%.2f", postrik_data.pomer_michani);
+    ESP_LOGI(TAG4, "Doba Postřiku:%s", postrik_data.doba_postriku);
 
     // Odpověď na POST požadavek
     const char resp[] = "{\"status\":\"success\"}";
@@ -203,40 +211,22 @@ httpd_uri_t uri_get = {
     .method = HTTP_GET,
     .handler = get_handler,
     .user_ctx = NULL};
-httpd_uri_t uri_on = {
-    .uri = "/on",
-    .method = HTTP_GET,
-    .handler = on,
-    .user_ctx = NULL};
-httpd_uri_t uri_off = {
-    .uri = "/off",
-    .method = HTTP_GET,
-    .handler = off,
-    .user_ctx = NULL};
 httpd_uri_t uri_post = {
     .uri = "/odeslat",
     .method = HTTP_POST,
     .handler = post_handler,
     .user_ctx = NULL};
-
 static httpd_handle_t start_webserver(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-
     httpd_handle_t server = NULL;
-
     if (httpd_start(&server, &config) == ESP_OK)
     {
         httpd_register_uri_handler(server, &uri_get);
-        httpd_register_uri_handler(server, &uri_on);
-        httpd_register_uri_handler(server, &uri_off);
-        // Přidejte tuto URI do seznamu URI handlerů
         httpd_register_uri_handler(server, &uri_post);
     }
-
     return server;
 }
-
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
@@ -254,7 +244,6 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
         // ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
     }
 }
-
 void wifi_init_sta(void)
 {
     esp_netif_init();
@@ -297,9 +286,6 @@ void wifi_init_sta(void)
 void app_main(void)
 {
 
-    gpio_set_direction(relePin, GPIO_MODE_OUTPUT);
-    gpio_set_level(relePin, 0);
-
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -311,6 +297,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
+    
     init_spiffs();
     start_webserver();
 }
