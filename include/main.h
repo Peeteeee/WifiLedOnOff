@@ -31,7 +31,21 @@ static const char *TAG4 = "JSON_Parser";
 #define EXAMPLE_ESP_WIFI_PASS "cabracina128"
 #define MAX_DATA_LENGTH 256
 
-typedef struct {
+int pocetPostriku = 0;
+int next_id = 1; // Globální proměnná pro sledování dalšího ID
+
+static const char *TAG = "HTTP_SERVER";
+static const char *TAG4 = "JSON_Parser";
+static const char *mujTag = "MUJTAG";
+static const char *TAG5 = "TIME";
+
+bool zacinameMichat = false;
+bool zacinamePoustetVodu = false;
+bool zacinameVazit = false;
+bool nezahajenoPousteniVodyTlacitkem = true;
+typedef struct
+{
+    int id;
     char nazev_pripravku[50];
     char osetrovana_plodina[50];
     double mnozstvi_postriku;

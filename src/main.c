@@ -1,85 +1,113 @@
 #include "main.h"
-char *cti_druh_postriku()
+
+void ulozPostrikData();
+
+PostrikData postrik_data;
+PostrikData dataBazePostriku[MAX_RUZNYCH_POSTRIKU];
+int delete_postrik(int id)
 {
-    FILE *file = fopen(FILE_PATH2, "r");
-    if (!file)
+    if (id < 1)
     {
-        ESP_LOGE(TAG, "Failed to open file for reading: %s", FILE_PATH2);
-        return NULL;
+        return 0; // Neplatné ID
     }
 
-    // Získání velikosti souboru
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    // Alokace paměti pro obsah souboru
-    char *buffer = (char *)malloc(file_size + 1);
-    if (!buffer)
+    for (int i = 0; i < pocetPostriku; i++)
     {
-        ESP_LOGE(TAG, "Failed to allocate memory for file content");
-        fclose(file);
-        return NULL;
+        if (dataBazePostriku[i].id == id)
+        {
+            for (int j = i; j < pocetPostriku - 1; j++)
+            {
+                dataBazePostriku[j] = dataBazePostriku[j + 1];
+            }
+            pocetPostriku--;
+        }
     }
+    ulozPostrikData();
 
-    // Čtení souboru do bufferu
-    size_t bytes_read = fread(buffer, 1, file_size, file);
-    if (bytes_read != file_size)
-    {
-        ESP_LOGE(TAG, "Failed to read the complete file content");
-        free(buffer);
-        fclose(file);
-        return NULL;
-    }
-    buffer[file_size] = '\0'; // Přidání nulového terminátoru
-
-    fclose(file);
-    return buffer;
+    return 1; // Úspěch
 }
-void init_spiffs(void)
+int generate_id()
 {
-    esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
-        .partition_label = NULL,
-        .max_files = 5,
-        .format_if_mount_failed = true};
-
-    // Inicializace SPIFFS
-    esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
-    if (ret != ESP_OK)
+    int max = 1;
+    for (int i = 0; i < pocetPostriku; i++)
     {
-        if (ret == ESP_FAIL)
+        if (dataBazePostriku[i].id >= max)
         {
-            ESP_LOGE("SPIFFS", "Failed to mount or format filesystem");
+            max = dataBazePostriku[i].id + 1;
         }
-        else if (ret == ESP_ERR_NOT_FOUND)
-        {
-            ESP_LOGE("SPIFFS", "Failed to find SPIFFS partition");
-        }
-        else
-        {
-            ESP_LOGE("SPIFFS", "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
-        }
+    }
+    return max;
+}
+void ulozPostrikData()
+{
+    FILE *soubor = fopen(FILE_PATH3, "wb");
+    if (soubor == NULL)
+    {
+        perror("Chyba při otevírání souboru");
         return;
     }
 
-    size_t total = 0, used = 0;
-    ret = esp_spiffs_info(NULL, &total, &used);
-    if (ret != ESP_OK)
+    // Uloží počet záznamů
+    fwrite(&pocetPostriku, sizeof(int), 1, soubor);
+
+    // Uloží data
+    fwrite(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
+
+    fclose(soubor);
+}
+void pridatPostrik(PostrikData novyPostrik)
+{
+    if (pocetPostriku < MAX_RUZNYCH_POSTRIKU)
     {
-        ESP_LOGE("SPIFFS", "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
-    }
-    else
-    {
-        ESP_LOGI("SPIFFS", "Partition size: total: %d, used: %d", total, used);
+        novyPostrik.id = generate_id();
+        dataBazePostriku[pocetPostriku] = novyPostrik;
+        pocetPostriku++;
+        ulozPostrikData(); // do spiffs/poleStruktur
     }
 }
-PostrikData postrik_data;
-void parse_json(const char *json_str, PostrikData *data) {
+void nactiPostrikData()
+{
+    FILE *soubor = fopen(FILE_PATH3, "rb");
+    if (soubor == NULL)
+    {
+        perror("Chyba při otevírání souboru");
+        return;
+    }
+    fread(&pocetPostriku, sizeof(int), 1, soubor);
+    fread(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
+
+    fclose(soubor);
+}
+int porovnejPostrikData(PostrikData *a, PostrikData *b)
+{
+    if (strcmp(a->nazev_pripravku, b->nazev_pripravku) != 0)
+    {
+        return 0;
+    }
+    if (strcmp(a->osetrovana_plodina, b->osetrovana_plodina) != 0)
+    {
+        return 0;
+    }
+    if (a->mnozstvi_postriku != b->mnozstvi_postriku)
+    {
+        return 0;
+    }
+    if (a->pomer_michani != b->pomer_michani)
+    {
+        return 0;
+    }
+    if (strcmp(a->doba_postriku, b->doba_postriku) != 0)
+    {
+        return 0;
+    }
+    return 1; // Struktury jsou stejné
+}
+void parse_json(const char *json_str, PostrikData *data)
+{
     // Načtení JSON řetězce do cJSON struktury
     cJSON *json = cJSON_Parse(json_str);
-    if (json == NULL) {
+    if (json == NULL)
+    {
         ESP_LOGE(TAG4, "Chyba při parsování JSON");
         return;
     }
@@ -92,50 +120,158 @@ void parse_json(const char *json_str, PostrikData *data) {
     cJSON *doba_postriku = cJSON_GetObjectItem(json, "dobaPostriku");
 
     // Kontrola a zpracování hodnot
-    if (cJSON_IsString(nazev_pripravku) && (nazev_pripravku->valuestring != NULL)) {
+    if (cJSON_IsString(nazev_pripravku) && (nazev_pripravku->valuestring != NULL))
+    {
         // Uložení názvu přípravku
         strncpy(data->nazev_pripravku, nazev_pripravku->valuestring, sizeof(data->nazev_pripravku) - 1);
         data->nazev_pripravku[sizeof(data->nazev_pripravku) - 1] = '\0'; // Null terminátor
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG4, "Chybějící nebo neplatný 'NazevPripravku'");
     }
 
-    if (cJSON_IsString(osetrovana_plodina) && (osetrovana_plodina->valuestring != NULL)) {
+    if (cJSON_IsString(osetrovana_plodina) && (osetrovana_plodina->valuestring != NULL))
+    {
         // Uložení ošetřované plodiny
         strncpy(data->osetrovana_plodina, osetrovana_plodina->valuestring, sizeof(data->osetrovana_plodina) - 1);
         data->osetrovana_plodina[sizeof(data->osetrovana_plodina) - 1] = '\0'; // Null terminátor
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG4, "Chybějící nebo neplatný 'OsetrovanaPlodina'");
     }
 
-    if (cJSON_IsNumber(mnozstvi_postriku)) {
+    if (cJSON_IsNumber(mnozstvi_postriku))
+    {
         // Uložení množství postřiku
         data->mnozstvi_postriku = mnozstvi_postriku->valuedouble;
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG4, "Chybějící nebo neplatný 'MnozstviPostriku'");
     }
 
-    if (cJSON_IsNumber(pomer_michani)) {
+    if (cJSON_IsNumber(pomer_michani))
+    {
         // Uložení poměru míchání
         data->pomer_michani = pomer_michani->valuedouble;
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG4, "Chybějící nebo neplatný 'PomerMichani'");
     }
 
-    if (cJSON_IsString(doba_postriku) && (doba_postriku->valuestring != NULL)) {
+    if (cJSON_IsString(doba_postriku) && (doba_postriku->valuestring != NULL))
+    {
         // Uložení doby postřiku
         strncpy(data->doba_postriku, doba_postriku->valuestring, sizeof(data->doba_postriku) - 1);
         data->doba_postriku[sizeof(data->doba_postriku) - 1] = '\0'; // Null terminátor
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG4, "Chybějící nebo neplatný 'DobaPostriku'");
     }
 
     // Uvolnění cJSON struktury
     cJSON_Delete(json);
 }
-esp_err_t get_handler(httpd_req_t *req)
+esp_err_t delete_postrik_handler(httpd_req_t *req)
+{
+    // Buffer pro příjem dat
+    char buf[100];
+    int received = 0;
+    cJSON *json = NULL;
+    cJSON *id = NULL;
+
+    // Čtení obsahu požadavku
+    while (received < req->content_len)
+    {
+        int ret = httpd_req_recv(req, buf + received, req->content_len - received);
+        if (ret < 0)
+        {
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT)
+            {
+                continue;
+            }
+            ESP_LOGE(TAG, "Chyba při čtení požadavku");
+            return ESP_FAIL;
+        }
+        received += ret;
+    }
+
+    // Parsing JSON
+    buf[received] = '\0';
+    json = cJSON_Parse(buf);
+    if (json == NULL)
+    {
+        ESP_LOGE(TAG, "Chyba při parsování JSON");
+        // httpd_resp_send_400(req);
+        return ESP_FAIL;
+    }
+
+    id = cJSON_GetObjectItem(json, "id");
+    if (cJSON_IsNumber(id))
+    {
+        ESP_LOGI(TAG, "Mazání položky s ID = %d", id->valueint);
+
+        delete_postrik(id->valueint);
+
+        // Odeslání úspěšné odpovědi
+        httpd_resp_send(req, "Položka byla úspěšně smazána.", HTTPD_RESP_USE_STRLEN);
+    }
+    else
+    {
+        // Odeslání chybové odpovědi
+        // httpd_resp_send_400(req);
+    }
+
+    cJSON_Delete(json);
+    return ESP_OK;
+}
+esp_err_t uvodniStrana_handler(httpd_req_t *req)
 {
     FILE *file = fopen(FILE_PATH, "r");
+    if (file == NULL)
+    {
+        ESP_LOGE("FILE", "Failed to open file for reading");
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+
+    // Získání velikosti souboru
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Alokace paměti pro obsah souboru
+    char *buffer = (char *)malloc(file_size + 1);
+    if (buffer == NULL)
+    {
+        ESP_LOGE("FILE", "Failed to allocate memory for file content");
+        fclose(file);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    // Čtení souboru do bufferu
+    fread(buffer, 1, file_size, file);
+    buffer[file_size] = '\0'; // Přidání nulového terminátoru
+
+    fclose(file);
+
+    // Odeslání obsahu souboru jako HTTP odpověď
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+
+    httpd_resp_send(req, buffer, file_size);
+
+    free(buffer);
+    return ESP_OK;
+}
+esp_err_t vkladaniDat_handler(httpd_req_t *req)
+{
+
+    FILE *file = fopen(FILE_PATH2, "r");
     if (file == NULL)
     {
         ESP_LOGE("FILE", "Failed to open file for reading");
@@ -180,8 +316,10 @@ esp_err_t post_handler(httpd_req_t *req)
 
     // Čtení dat z požadavku
     ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (ret < 0) {
-        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+    if (ret < 0)
+    {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT)
+        {
             ESP_LOGE(TAG4, "Timeout při čtení dat");
         }
         return ESP_FAIL;
@@ -194,36 +332,144 @@ esp_err_t post_handler(httpd_req_t *req)
     parse_json(buf, &postrik_data);
     ESP_LOGI(TAG4, "buf:%s", buf);
 
-    // Výpis výsledku
-    ESP_LOGI(TAG4, "Název Přípravku:%s", postrik_data.nazev_pripravku);
-    ESP_LOGI(TAG4, "Ošetřovaná Plodina:%s", postrik_data.osetrovana_plodina);
-    ESP_LOGI(TAG4, "Množství Postřiku [l]:%.2f", postrik_data.mnozstvi_postriku);
-    ESP_LOGI(TAG4, "Poměr Míchání [g/l]:%.2f", postrik_data.pomer_michani);
-    ESP_LOGI(TAG4, "Doba Postřiku:%s", postrik_data.doba_postriku);
+    bool uzJevDatabazi = false;
+    for (int i = 0; i < pocetPostriku; i++)
+    {
+        if (porovnejPostrikData(&dataBazePostriku[pocetPostriku - 1 - i], &postrik_data))
+        {
+            uzJevDatabazi = true;
+            printf("alespon jeden je stejny.\n");
+        }
+    }
+    if (!uzJevDatabazi)
+    {
+        printf("zadny neni stejny.\n");
+        pridatPostrik(postrik_data);
+    }
+    ESP_LOGI(TAG4, "pocet postriku:%d", pocetPostriku);
 
     // Odpověď na POST požadavek
     const char resp[] = "{\"status\":\"success\"}";
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
-httpd_uri_t uri_get = {
+esp_err_t get_postrik_data_handler(httpd_req_t *req)
+{
+
+    char response[4096];
+    int len = 0;
+
+    len = snprintf(response, sizeof(response), "[");
+    for (int i = 0; i < pocetPostriku; i++)
+    {
+        if (i > 0)
+        {
+            len += snprintf(response + len, sizeof(response) - len, ",");
+        }
+        len += snprintf(response + len, sizeof(response) - len,
+                        "{\"id\":%d,\"nazev\":\"%s\",\"plodina\":\"%s\",\"mnozstvi\":%.2f,\"pomer\":%.2f,\"doba\":\"%s\"}",
+                        dataBazePostriku[i].id,
+                        dataBazePostriku[i].nazev_pripravku,
+                        dataBazePostriku[i].osetrovana_plodina,
+                        dataBazePostriku[i].mnozstvi_postriku,
+                        dataBazePostriku[i].pomer_michani,
+                        dataBazePostriku[i].doba_postriku);
+    }
+    snprintf(response + len, sizeof(response) - len, "]");
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, response, strlen(response));
+    return ESP_OK;
+}
+esp_err_t edit_postrik_handler(httpd_req_t *req)
+{
+
+    return ESP_OK;
+}
+httpd_uri_t delete_postrik_uri = {
+    .uri = "/smazat",
+    .method = HTTP_DELETE,
+    .handler = delete_postrik_handler,
+    .user_ctx = NULL};
+
+httpd_uri_t edit_postrik_uri = {
+    .uri = "/zmenit",
+    .method = HTTP_GET,
+    .handler = edit_postrik_handler,
+    .user_ctx = NULL};
+httpd_uri_t get_postrik_data = {
+    .uri = "/postriky",
+    .method = HTTP_GET,
+    .handler = get_postrik_data_handler,
+    .user_ctx = NULL};
+httpd_uri_t uri_uvodniStrana = {
     .uri = "/",
     .method = HTTP_GET,
-    .handler = get_handler,
+    .handler = uvodniStrana_handler,
+    .user_ctx = NULL};
+
+httpd_uri_t uri_vkladaniDat = {
+    .uri = "/vkladaniDat",
+    .method = HTTP_GET,
+    .handler = vkladaniDat_handler,
     .user_ctx = NULL};
 httpd_uri_t uri_post = {
     .uri = "/odeslat",
     .method = HTTP_POST,
     .handler = post_handler,
     .user_ctx = NULL};
+
+void init_spiffs(void)
+{
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/spiffs",
+        .partition_label = NULL,
+        .max_files = 5,
+        .format_if_mount_failed = true};
+
+    // Inicializace SPIFFS
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret != ESP_OK)
+    {
+        if (ret == ESP_FAIL)
+        {
+            ESP_LOGE("SPIFFS", "Failed to mount or format filesystem");
+        }
+        else if (ret == ESP_ERR_NOT_FOUND)
+        {
+            ESP_LOGE("SPIFFS", "Failed to find SPIFFS partition");
+        }
+        else
+        {
+            ESP_LOGE("SPIFFS", "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info(NULL, &total, &used);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE("SPIFFS", "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
+    }
+    else
+    {
+        ESP_LOGI("SPIFFS", "Partition size: total: %d, used: %d", total, used);
+    }
+}
 static httpd_handle_t start_webserver(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &config) == ESP_OK)
     {
-        httpd_register_uri_handler(server, &uri_get);
+        httpd_register_uri_handler(server, &delete_postrik_uri);
+        httpd_register_uri_handler(server, &uri_uvodniStrana);
+        httpd_register_uri_handler(server, &uri_vkladaniDat);
         httpd_register_uri_handler(server, &uri_post);
+        httpd_register_uri_handler(server, &get_postrik_data);
+        httpd_register_uri_handler(server, &edit_postrik_uri);
     }
     return server;
 }
@@ -283,8 +529,122 @@ void wifi_init_sta(void)
              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
 }
 
+void print_current_time(char *buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    strftime(buffer, buffer_size, "%Y-%m-%d", &timeinfo);
+}
+void initialize_sntp(void)
+{
+    ESP_LOGI(TAG5, "Initializing SNTP");
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+}
+void obtain_time(void)
+{
+    initialize_sntp();
+
+    // Čekání na synchronizaci času přes NTP
+    time_t now = 0;
+    struct tm timeinfo = {0};
+    int retry = 0;
+    const int retry_count = 30;
+    while (timeinfo.tm_year < (2022 - 1900) && ++retry < retry_count)
+    {
+        ESP_LOGI(TAG5, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        time(&now);
+        localtime_r(&now, &timeinfo);
+    }
+
+    if (retry == retry_count)
+    {
+        ESP_LOGE(TAG5, "Failed to synchronize time");
+    }
+    else
+    {
+        ESP_LOGI(TAG5, "Time synchronized successfully");
+    }
+}
+
+// task na jadre 1
+void michaciProcedura(void *pvParameter)
+{
+    while (1)
+    {
+        ESP_LOGI(mujTag, "michaciprocedura\n");
+        if (zacinameMichat)
+        {
+            zacinameMichat = false; // muzu resumovat tlacitkem
+            double potrebneMnozstviPripravku = postrik_data.mnozstvi_postriku * postrik_data.pomer_michani;
+            // tare mala vaha
+            //  displej: vyber pripravek "pripravek"
+            //  nasyp na misku potrebneMnozstviPripravku
+
+            // while(potrebneMnozstviPripravku < funkceVaha...jeste vymyslim)
+            {
+                // displej ukazuje zbyvajici hmotnost
+            }
+            // displej: hotovo
+            // displej: potvrd spusteni vody
+            while (nezahajenoPousteniVodyTlacitkem)
+            {
+                ESP_LOGI(mujTag, "cekam na svoleni ke pusteni vody:\n");
+                ESP_LOGI(mujTag, "potrebne mnozstvi pripravku:%f\n", potrebneMnozstviPripravku);
+                vTaskDelay(1000 / portTICK_PERIOD_MS);
+            }
+            ESP_LOGI(mujTag, "poustim vodu\n");
+        }
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+void mujTaskNaJadreJedna(void *pvParameter)
+{
+    nactiPostrikData();
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+
+    while (1)
+    {
+        for (int i = 0; i < pocetPostriku; i++)
+        {
+            printf("postrik nazev:%s\n", dataBazePostriku[i].nazev_pripravku);
+            printf("postrik plodina:%s\n", dataBazePostriku[i].osetrovana_plodina);
+            printf("postrik mnozstvi:%f\n", dataBazePostriku[i].mnozstvi_postriku);
+            printf("postrik pomer:%f\n", dataBazePostriku[i].pomer_michani);
+            printf("postrik datum:%s\n", dataBazePostriku[i].doba_postriku);
+            printf("postrik id:%d\n", dataBazePostriku[i].id);
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+
+        char date_str[64];
+        print_current_time(date_str, sizeof(date_str));
+
+        if (strcmp(date_str, postrik_data.doba_postriku) == 0)
+        {
+            ESP_LOGI(mujTag, "datumSedi\n");
+            // zacinameMichat = true;
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+        else
+        {
+            ESP_LOGI(mujTag, "datumNesedi\n");
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+        ESP_LOGI(mujTag, "JeduPrvniJadroTask\n");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+
 void app_main(void)
 {
+    gpio_set_direction(relePin, GPIO_MODE_OUTPUT);
+    gpio_set_level(relePin, 0);
 
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -297,7 +657,30 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
-    
+
     init_spiffs();
     start_webserver();
+    // Nastavení časového pásma
+    setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
+    tzset();
+    obtain_time();
+
+    xTaskCreatePinnedToCore(
+        mujTaskNaJadreJedna,   // Task function
+        "mujTaskNaJadreJedna", // Task name
+        2048,                  // Stack size
+        NULL,                  // Parameters
+        1,                     // Priority
+        NULL,                  // Task handle
+        1                      // Core ID (0 or 1)
+    );
+    xTaskCreatePinnedToCore(
+        michaciProcedura,   // Task function
+        "michaciProcedura", // Task name
+        4096,               // Stack size
+        NULL,               // Parameters
+        5,                  // Priority
+        NULL,               // Task handle
+        1                   // Core ID (0 or 1)
+    );
 }
