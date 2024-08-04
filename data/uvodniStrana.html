@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zobrazit Údaje o Postřiku</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif; /* Nastavení písma pro celé tělo stránky */
+        margin: 20px; /* Vnější okraje stránky */
+        background-color: #333; /* Tmavá barva pozadí stránky */
+        color: #fff; /* Světlá barva textu */
+      }
+      button {
+        padding: 10px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        width: 10%;
+        margin: 2px 0;
+      }
+      .action-buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: space-evenly;
+        width: 150px; /* Nastaví šířku tlačítka na 150 pixelů */
+        height: 50px; /* Nastaví výšku tlačítka na 50 pixelů */
+      }
+      table {
+        width: 80%;
+        border-collapse: collapse;
+        background-color: #444; /* Tmavší barva pozadí formuláře */
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      th {
+        background-color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Údaje o postřiku</h1>
+    <div class="container">
+      <table id="dataTable">
+        <thead>
+          <tr>
+            <th>id</th>
+            <th>Název Přípravku</th>
+            <th>Ošetřovaná Plodina</th>
+            <th>Množství Postřiku [l]</th>
+            <th>Poměr Míchání [g/l]</th>
+            <th>Doba Postřiku</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Řádky budou dynamicky přidány pomocí JavaScriptu -->
+        </tbody>
+      </table>
+      <button onclick="window.location.href='/vkladaniDat'">
+        Přidat Postřik
+      </button>
+    </div>
+
+    <script>
+      // Funkce pro načtení dat z API a vytvoření řádků
+      async function loadData() {
+        try {
+          const response = await fetch("http://192.168.0.199/postriky"); // Změňte na skutečnou URL API
+          const data = await response.json();
+          const tableBody = document.querySelector("#dataTable tbody");
+
+          // Vyčistit tabulku
+          tableBody.innerHTML = "";
+
+          // Přidat řádky do tabulky
+          data.forEach((item) => {
+            const newRow = document.createElement("tr");
+            newRow.innerHTML = `
+            <td>${item.id}</td>
+            <td>${item.nazev}</td>
+            <td>${item.plodina}</td>
+            <td>${item.mnozstvi}</td>
+            <td>${item.pomer}</td>
+            <td>${item.doba}</td>
+            <td>
+              <div class="action-buttons">
+                <button onclick="editRow(this)">Editovat</button>
+              </div>
+            </td>
+            <td>
+              <div class="action-buttons">
+                <button onclick="deleteRow(this, ${item.id})">Smazat</button>
+              </div>
+            </td>
+          `;
+            tableBody.appendChild(newRow);
+          });
+        } catch (error) {
+          console.error("Chyba při načítání dat:", error);
+        }
+      }
+
+      function editRow(button) {
+        const row = button.closest("tr");
+        // Implementujte logiku pro úpravu řádku
+        alert("Editovat řádek: " + row.innerText);
+      }
+
+      async function deleteRow(button, id) {
+        const row = button.closest("tr");
+        // Implementujte logiku pro smazání řádku
+        if (confirm("Opravdu chcete smazat tento řádek?")) {
+          try {
+            const response = await fetch(`http://192.168.0.199/smazat`, {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ id: id }),
+            });
+
+            if (response.ok) {
+              row.remove();
+              alert("Řádek byl úspěšně smazán");
+            } else {
+              const errorData = await response.json();
+              alert(`Chyba při mazání řádku: ${errorData.message}`);
+            }
+          } catch (error) {
+            console.error("Chyba při mazání řádku:", error);
+            alert("Došlo k chybě při mazání řádku");
+          }
+        }
+      }
+
+      // Načíst data po načtení stránky
+      window.onload = loadData;
+    </script>
+  </body>
+</html>

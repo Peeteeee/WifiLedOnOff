@@ -13,24 +13,33 @@
 #include "freertos/task.h"
 #include "lwip/inet.h"
 #include "driver/gpio.h"
-
+#include "esp_sntp.h"
 #include "esp_vfs.h"
 #include "esp_vfs_fat.h"
 #include "esp_spiffs.h"
 #include "cJSON.h"
+#include <sys/time.h>
+#include <time.h>
+#include "esp_system.h"
+#include <lcd1602.h>
 
-#define FILE_PATH "/spiffs/index.html"
-#define FILE_PATH2 "/spiffs/druh_postriku.txt"
+#define RS GPIO_NUM_2
+#define EN GPIO_NUM_4
+#define D4 GPIO_NUM_5
+#define D5 GPIO_NUM_21
+#define D6 GPIO_NUM_22
+#define D7 GPIO_NUM_23
 
+#define FILE_PATH "/spiffs/uvodniStrana.html"
+#define FILE_PATH2 "/spiffs/vkladaniDat.html"
+#define FILE_PATH3 "/spiffs/poleStruktur.bin"
 #define IP_ADRESA_ESP32 "192.168.0.111"
-
-static const char *TAG = "HTTP_SERVER";
-static const char *TAG4 = "JSON_Parser";
-// WiFi SSID a heslo
+#define relePin GPIO_NUM_2
+#define MAX_RUZNYCH_POSTRIKU 20
 #define EXAMPLE_ESP_WIFI_SSID "TP-LINK_0D7A"
 #define EXAMPLE_ESP_WIFI_PASS "cabracina128"
 #define MAX_DATA_LENGTH 256
-
+#define CHUNK_SIZE 1024
 int pocetPostriku = 0;
 int next_id = 1; // Globální proměnná pro sledování dalšího ID
 
@@ -47,10 +56,10 @@ typedef struct
 {
     int id;
     char nazev_pripravku[50];
-    char osetrovana_plodina[50];
+    char osetrovana_plodina[81];
     double mnozstvi_postriku;
     double pomer_michani;
-    char doba_postriku[11]; // Formát: YYYY-MM-DD (10 znaků + 1 pro nulový terminátor)
+    char doba_postriku[11];
 } PostrikData;
 
 #endif

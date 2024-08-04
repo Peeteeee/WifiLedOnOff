@@ -86,7 +86,7 @@
             const dobaPostriku = document.getElementById('dobaPostrikuInput').value;
 
             // Odeslání údajů do ESP32
-            fetch('http://192.168.0.199/odeslat', {
+            fetch('http://192.168.0.199/ulozit', {
                 method: 'POST', // Metoda POST pro odeslání dat
                 headers: {
                     'Content-Type': 'application/json' // Nastavení typu obsahu na JSON
