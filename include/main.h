@@ -52,6 +52,7 @@ bool zacinameMichat = false;
 bool zacinamePoustetVodu = false;
 bool zacinameVazit = false;
 bool nezahajenoPousteniVodyTlacitkem = true;
+bool jsemPripojenAP = false;
 typedef struct
 {
     int id;

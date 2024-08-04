@@ -607,7 +607,7 @@ void wifi_init_sta(void)
              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
 }
 
-void print_current_time(char *buffer, size_t buffer_size)
+void print_current_date(char *buffer, size_t buffer_size)
 {
     time_t now;
     struct tm timeinfo;
@@ -616,6 +616,16 @@ void print_current_time(char *buffer, size_t buffer_size)
     localtime_r(&now, &timeinfo);
 
     strftime(buffer, buffer_size, "%Y-%m-%d", &timeinfo);
+}
+void print_current_time(char *buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    strftime(buffer, buffer_size, "%H:%M:%S", &timeinfo);
 }
 void initialize_sntp(void)
 {
@@ -705,9 +715,17 @@ void mujTaskNaJadreJedna(void *pvParameter)
         static char str[8];                              // Velikost dostatečná pro int (včetně záporného znaménka a null-terminátoru)
         snprintf(str, sizeof(str), "%d", pocetPostriku); // Převod integeru na řetězec
         lcd1602_write(str);
+        // vTaskDelay(500/portTICK_PERIOD_MS);
+        lcd1602_set_cursor(1, 0);
+        //lcd1602_write("Lena is the best!");
+
+char textProDisplej[10];
+print_current_time(textProDisplej, sizeof(textProDisplej));
+lcd1602_write(textProDisplej);
+
 
         char date_str[64];
-        print_current_time(date_str, sizeof(date_str));
+        print_current_date(date_str, sizeof(date_str));
 
         if (strcmp(date_str, postrik_data.doba_postriku) == 0)
         {
@@ -725,28 +743,23 @@ void mujTaskNaJadreJedna(void *pvParameter)
 
 void app_main(void)
 {
-    gpio_set_direction(relePin, GPIO_MODE_OUTPUT);
-    gpio_set_level(relePin, 0);
-    lcd1602_shift_left();
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND){ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();}
     ESP_ERROR_CHECK(ret);
 
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
-
-    init_spiffs();
-    start_webserver();
-    // Nastavení časového pásma
     setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
     tzset();
     obtain_time();
+    init_spiffs();
+    start_webserver();
     lcd1602_init(RS, EN, D4, D5, D6, D7);
+    lcd1602_shift_left();
+    //gpio_set_direction(relePin, GPIO_MODE_OUTPUT);
+    //gpio_set_level(relePin, 0);
+    
     xTaskCreatePinnedToCore(
         mujTaskNaJadreJedna,   // Task function
         "mujTaskNaJadreJedna", // Task name
