@@ -20,13 +20,20 @@
         cursor: pointer;
         width: 10%;
         margin: 2px 0;
+        width: 300px;
       }
       .action-buttons {
         display: flex;
-        gap: 10px;
-        justify-content: space-evenly;
+        font-size: 60px;
+        gap: 10px 20px; /* row-gap column gap */
+        row-gap: 10px;
+        column-gap: 20px;
         width: 150px; /* Nastaví šířku tlačítka na 150 pixelů */
         height: 50px; /* Nastaví výšku tlačítka na 50 pixelů */
+        display: flex; /* Flexbox pro rozložení tlačítek */
+        gap: 10px; /* Mezera mezi tlačítky */
+        justify-content: center; /* Zarovnání tlačítek do středu */
+        margin: 0 auto; /* Centrovat kontejner */
       }
       table {
         width: 80%;
@@ -90,7 +97,7 @@
             <td>${item.doba}</td>
             <td>
               <div class="action-buttons">
-                <button onclick="editRow(this)">Editovat</button>
+                <button onclick="editRow(this, ${item.id})">Upravit</button>
               </div>
             </td>
             <td>
@@ -106,10 +113,31 @@
         }
       }
 
-      function editRow(button) {
+      async function editRow(button, id) {
         const row = button.closest("tr");
-        // Implementujte logiku pro úpravu řádku
-        alert("Editovat řádek: " + row.innerText);
+        // Implementujte logiku pro upravu řádku
+        if (confirm("Opravdu chcete upravit tento řádek?")) {
+          try {
+            const response = await fetch(`http://192.168.0.199/zmenit`, {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ id: id }),
+            });
+
+            if (response.ok) {
+              location.reload();
+              alert("Řádek byl úspěšně upraven");
+            } else {
+              const errorData = await response.json();
+              alert(`Chyba při uprave řádku: ${errorData.message}`);
+            }
+          } catch (error) {
+            console.error("Chyba při uprave řádku:", error);
+            alert("Došlo k chybě při uprave řádku");
+          }
+        }
       }
 
       async function deleteRow(button, id) {
@@ -126,7 +154,7 @@
             });
 
             if (response.ok) {
-              row.remove();
+                location.reload();
               alert("Řádek byl úspěšně smazán");
             } else {
               const errorData = await response.json();
