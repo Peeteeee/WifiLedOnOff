@@ -43,7 +43,7 @@
 #define FILE_PATH3 "/spiffs/zmenaDat.html"
 #define FILE_PATH4 "/spiffs/poleStruktur.bin"
 
-#define MAX_RUZNYCH_POSTRIKU 20
+#define MAX_RUZNYCH_POSTRIKU 50
 #define EXAMPLE_ESP_WIFI_SSID "TP-LINK_0D7A"
 #define EXAMPLE_ESP_WIFI_PASS "cabracina128"
 #define MAX_DATA_LENGTH 256
@@ -72,14 +72,20 @@ int prevodniFaktorA = 18070;
 int prevodniFaktorB = 1000;
 
 static const char *TAG = "HTTP_SERVER";
+static const char *TAG2 = "TASK_MUJ_TASK";
+static const char *TAG3 = "TASK_MICHANI";
 static const char *TAG4 = "JSON_Parser";
-
 static const char *TAG5 = "TIME";
 static const char *TAG6 = "ulozDataZFormulare_handler";
 static const char *TAG7 = "prevodDatumu";
-//static const char *TAG8 = "tednevim";
+static const char *TAG8 = "Predvyplneni";
 static const char *TAG9 = "nactiPostrikData";
-// static const char *TAG5 = "TIME";
+static const char *TAG10 = "TARE";
+static const char *TAG11 = "zvazPripravek";
+static const char *TAG12 = "seradDatabaziPodleData";
+static const char *TAG13 = "smazaniPostriku_handler";
+static const char *TAG14 = "zmenaDatVDatabaziId_handler";
+static const char *TAG15 = "extract_id_from_json";
 
 bool zacaloMichani = false;
 bool zahajenoPousteniVodyTlacitkem = false;
@@ -100,10 +106,15 @@ void initialize_sntp(void);
 void obtain_time(void);
 static httpd_handle_t start_webserver(void);
 
+void aktualizujDenAplikace(int idStruktury, const char *denAplikace);
+void aktualizujDisplejMnozstvi(double potrebneMnozstviPripravku);
+void cekejNaFinalizaciMichani(char *osetrovanaPlodina);
+void cekejNaSpusteniVody();
 int delete_postrik(int id);
 bool extract_id_from_json(cJSON *json, int *id);
 int generate_id();
 bool lcd_update(const char *text, int line);
+bool mamNecoKmichani(void);
 void nactiPostrikData();
 void napustVodu(double litru);
 void parse_json_for_id(const char *json_str, PostrikData *data);
@@ -116,8 +127,8 @@ void print_current_time(char *buffer, size_t buffer_size);
 void seradDatabaziPodleData();
 void ulozPostrikData();
 void tare();
-
-
+void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina);
+void zvazPripravek(double gramu);
 
 esp_err_t uvodniStranaKsicht_handler(httpd_req_t *req);
 esp_err_t nahlasPostriky_handler(httpd_req_t *req);

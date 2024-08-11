@@ -25,49 +25,97 @@ void configure_interrupt2()
 {
     gpio_set_direction(tlacitko2, GPIO_MODE_INPUT);
     gpio_set_intr_type(tlacitko2, GPIO_INTR_POSEDGE);
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    //gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     gpio_isr_handler_add(tlacitko2, isrCancel, NULL);
 }
 void configure_interrupt3()
 {
     gpio_set_direction(tlacitko3, GPIO_MODE_INPUT);
     gpio_set_intr_type(tlacitko3, GPIO_INTR_POSEDGE);
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    //gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     gpio_isr_handler_add(tlacitko3, isrAux, NULL);
 }
 
-int delete_postrik(int id)
+void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
 {
-    // Zkontrolovat, zda je poskytnuté ID platné
-    if (id < 1 || pocetPostriku == 0)
+    ESP_LOGI(TAG, "Aktualizuji den aplikace pro id: %d na %s", idStruktury, denAplikace);
+
+    for (int j = 0; j < pocetPostriku; j++)
     {
-        return 0; // Vrátit 0 pro označení neplatného ID nebo prázdného seznamu
+        if (dataBazePostriku[j].id == idStruktury)
+        {
+            strcpy(dataBazePostriku[j].denPosledniAplikacePostriku, denAplikace);
+            ESP_LOGI(TAG, "Den aplikace aktualizován pro postřik s id: %d", idStruktury);
+            return;
+        }
     }
 
-    // Procházet pole postřikových dat
+    ESP_LOGE(TAG, "Nepodařilo se aktualizovat den aplikace pro id: %d. Postřik nebyl nalezen.", idStruktury);
+}
+void aktualizujDisplejMnozstvi(double potrebneMnozstviPripravku)
+{
+    ESP_LOGI(TAG, "Aktualizuji displej s potřebným množstvím přípravku: %.2f g", potrebneMnozstviPripravku);
+
+    char mnozstviPripravku[20];
+    sprintf(mnozstviPripravku, "%.2f", potrebneMnozstviPripravku);
+
+    char str[30] = "Mnozstvi: ";
+    strcat(str, mnozstviPripravku);
+
+    // Aktualizace LCD displeje
+    lcd_update(str, 0);
+    lcd_update(" ", 1);
+}
+void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
+{
+    ESP_LOGI(TAG, "Čekám na potvrzení dokončení míchání...");
+
+    while (!kvitujiFinaleMichani)
+    {
+        lcd_update("Tlacitko 3", 1);
+        lcd_update("Osetri ", 0);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        lcd_update(osetrovanaPlodina, 0);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
+    ESP_LOGI(TAG, "Dokončení míchání potvrzeno.");
+}
+void cekejNaSpusteniVody()
+{
+    ESP_LOGI(TAG, "Čekám na spuštění vody uživatelem...");
+
+    while (!zahajenoPousteniVodyTlacitkem)
+    {
+        lcd_update("Pustit vodu?", 0);
+        lcd_update("Tlacitko 1", 1);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+
+    ESP_LOGI(TAG, "Spuštění vody potvrzeno uživatelem.");
+}
+int delete_postrik(int id)
+{
+    if (id < 1 || pocetPostriku == 0)
+    {
+        return 0;
+    }
+
     for (int i = 0; i < pocetPostriku; i++)
     {
-        // Zkontrolovat, zda ID aktuálního postřiku odpovídá danému ID
         if (dataBazePostriku[i].id == id)
         {
-            // Posunout všechny prvky po nalezeném prvku o jednu pozici vlevo
             for (int j = i; j < pocetPostriku - 1; j++)
             {
                 dataBazePostriku[j] = dataBazePostriku[j + 1];
             }
-            // Snížit počet postřikových záznamů
             pocetPostriku--;
-            // Zavolat funkci pro uložení aktualizovaných postřikových dat
             ulozPostrikData();
-            printf("\npocet postriku Delete:%d\n", pocetPostriku);
-
-            // Předčasně ukončit smyčku po úspěšném smazání
-            break;
+            ESP_LOGI("DELETE_POSTRIK", "Pocet postriku Delete: %d", pocetPostriku);
+            return 1;
         }
     }
-
-    // Vrátit 1 pro označení úspěchu
-    return 1;
+    return 0; // Záznam nebyl nalezen
 }
 bool extract_id_from_json(cJSON *json, int *id)
 {
@@ -86,7 +134,7 @@ bool extract_id_from_json(cJSON *json, int *id)
     }
 
     *id = id_item->valueint;
-    ESP_LOGI(TAG4, "Úspěšně načteno id: %d", *id);
+    ESP_LOGI(TAG15, "Úspěšně načteno id: %d", *id);
     return true;
 }
 int generate_id()
@@ -181,7 +229,7 @@ void nactiPostrikData()
     fread(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
 
     fclose(soubor);
-    ESP_LOGI(TAG9, "jsem v nactipostrikdata");
+    ESP_LOGI(TAG9, "Tak zaciname.");
     seradDatabaziPodleData();
 }
 void napustVodu(double litru)
@@ -310,7 +358,8 @@ int porovnejPostrikData(PostrikData *a, PostrikData *b)
 }
 void prevodDatumu(char *datum)
 {
-    printf("prevod datumu:%s\n", datum);
+    ESP_LOGE(TAG7, "prevod datumu YYYY-MM-DD na DD-MM: %s", datum);
+
     // Zajištění, že vstupní datum má správnou délku (10 znaků pro formát YYYY-MM-DD)
     if (strlen(datum) != 10)
     {
@@ -319,21 +368,22 @@ void prevodDatumu(char *datum)
     }
 
     // Vytvoření bufferu pro upravené datum ve formátu DD-MM
-    char datumKuprave[6];  // 5 znaků + null-terminátor
+    char datumKuprave[6]; // 5 znaků + null-terminátor
 
     // Kopírování dne a měsíce do nového formátu
-    datumKuprave[0] = datum[8];  // Den - první číslice
-    datumKuprave[1] = datum[9];  // Den - druhá číslice
-    datumKuprave[2] = '-';       // Oddělovač "-"
-    datumKuprave[3] = datum[5];  // Měsíc - první číslice
-    datumKuprave[4] = datum[6];  // Měsíc - druhá číslice
-    datumKuprave[5] = '\0';      // Null-terminátor
+    datumKuprave[0] = datum[8]; // Den - první číslice
+    datumKuprave[1] = datum[9]; // Den - druhá číslice
+    datumKuprave[2] = '-';      // Oddělovač "-"
+    datumKuprave[3] = datum[5]; // Měsíc - první číslice
+    datumKuprave[4] = datum[6]; // Měsíc - druhá číslice
+    datumKuprave[5] = '\0';     // Null-terminátor
 
     // Přepis původního data novým formátem
     strcpy(datum, datumKuprave);
+    //ESP_LOGE(TAG7, "prevod datumu%s", datum);
 
-    // // Logování úspěšné konverze
-    // ESP_LOGI(TAG4, "Datum úspěšně převedeno na formát DD-MM: %s", datum);
+     // Logování úspěšné konverze
+     ESP_LOGI(TAG7, "Datum úspěšně převedeno na formát DD-MM: %s", datum);
 }
 void pridatPostrik(PostrikData novyPostrik)
 {
@@ -367,18 +417,7 @@ void print_current_time(char *buffer, size_t buffer_size)
 }
 void seradDatabaziPodleData()
 {
-    printf("datum postriku v serad databazi:%s\n", dataBazePostriku[0].doba_postriku);
-    //     for (int i = 0; i < pocetPostriku - 1; i++)
-    //     {
-    //         for (int j = 1; j < pocetPostriku; j++)
-    //         {
-    //             //dd.mm
-    //             if (dataBazePostriku[i].doba_postriku[4] > dataBazePostriku[j].doba_postriku[4])
-    //             {
-
-    //             }
-    //         }
-    //     }
+    ESP_LOGE(TAG12, "Radim DB podle data");
 }
 void ulozPostrikData()
 {
@@ -409,22 +448,43 @@ void tare()
     esp_err_t r = hx711_wait(&dev, 800); // 200
     if (r != ESP_OK)
     {
-        ESP_LOGE(TAG, "Device not found... tarefce: %d (%s)\n", r, esp_err_to_name(r));
+        ESP_LOGE(TAG10, "Device not found... tarefce: %d (%s)\n", r, esp_err_to_name(r));
     }
     int32_t data = 0;
     r = hx711_read_median(&dev, 20, &data); // musi byt sude
     if (r != ESP_OK)
     {
-        ESP_LOGE(TAG, "Could not read data... tarefce: %d (%s)\n", r, esp_err_to_name(r));
+        ESP_LOGE(TAG10, "Could not read data... tarefce: %d (%s)\n", r, esp_err_to_name(r));
     }
     ofsetek1 = data;
     chciTarovat = false;
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
+void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina)
+{
+    ESP_LOGI(TAG, "Zpracovávám data postřiku pro id: %d", idStruktury);
+
+    for (int i = 0; i < pocetPostriku; i++)
+    {
+        if (dataBazePostriku[i].id == idStruktury)
+        {
+            *mnozstviPostriku = dataBazePostriku[i].mnozstvi_postriku;
+            *pomerMichani = dataBazePostriku[i].pomer_michani;
+            strcpy(nazevPripravku, dataBazePostriku[i].nazev_pripravku);
+            strcpy(osetrovanaPlodina, dataBazePostriku[i].osetrovana_plodina);
+
+            ESP_LOGI(TAG, "Načteno: Množství postřiku = %.2f, Poměr míchání = %.2f, Název přípravku = %s, Ošetřovaná plodina = %s",
+                     *mnozstviPostriku, *pomerMichani, nazevPripravku, osetrovanaPlodina);
+            return;
+        }
+    }
+
+    ESP_LOGE(TAG, "Postřik s id %d nebyl nalezen.", idStruktury);
+}
 void zvazPripravek(double gramu)
 {
-    ESP_LOGI(TAG, "Starting weighing process for %f grams", gramu); // Log start of function
-    printf("zvaz:gramu:%f\n", gramu);                               // Console output for debugging
+    ESP_LOGI(TAG11, "Starting weighing process for %f grams", gramu); // Log start of function
+    printf("zvaz:gramu:%f\n", gramu);                                 // Console output for debugging
 
     // Initialize the HX711 device structure
     hx711_t dev = {
@@ -435,7 +495,7 @@ void zvazPripravek(double gramu)
     // Initialize device and check for errors
     ESP_ERROR_CHECK(hx711_init(&dev));
     tare();
-    ESP_LOGI(TAG, "Device initialized and tared");
+    ESP_LOGI(TAG11, "Device initialized and tared");
 
     bool jesteToNeniDost = true; // Variable to control the weighing loop
     int32_t data = 0;            // Variable to store raw data from HX711
@@ -444,19 +504,19 @@ void zvazPripravek(double gramu)
     {
         // Read median value from HX711
         esp_err_t r = hx711_read_median(&dev, 6, &data);
-        ESP_LOGE(TAG, "Merim %ld g\n", data);
-        ESP_LOGE(TAG, "Chci %f g\n", gramu);
+        ESP_LOGE(TAG11, "Merim: %ld gramu\n", data);
+        ESP_LOGE(TAG11, "Potrebuji: %f gramu\n", gramu);
         if (r != ESP_OK)
         {
-            ESP_LOGE(TAG, "Could not read data... error: %d (%s)", r, esp_err_to_name(r));
+            ESP_LOGE(TAG11, "Could not read data... error: %d (%s)", r, esp_err_to_name(r));
             continue; // Skip the rest of the loop if data read fails
         }
 
         // Calculate the actual weight
         double novaData = (double)data - ofsetek1;
         double dataProDisplay = novaData / prevodniFaktorA < 0 ? -novaData / prevodniFaktorA : novaData / prevodniFaktorA;
-        ESP_LOGE(TAG, "Merim %f g\n", dataProDisplay);
-        ESP_LOGE(TAG, "Chci %f g\n", gramu);
+        ESP_LOGE(TAG11, "Merim %f g\n", dataProDisplay);
+        ESP_LOGE(TAG11, "Chci %f g\n", gramu);
 
         // Format the weight data as a string
         char stringKzobrazeni[10];                                                    // Buffer to hold the string representation of the weight
@@ -468,21 +528,21 @@ void zvazPripravek(double gramu)
             lcd_update(stringKzobrazeni, 0);
             lcd_update("Syp, syp.", 1);
             xSemaphoreGive(Displej);
-            ESP_LOGI(TAG, "Display updated with weight: %s", stringKzobrazeni);
+            ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni);
         }
         else
         {
-            ESP_LOGW(TAG, "Failed to take semaphore for display update");
+            ESP_LOGW(TAG11, "Failed to take semaphore for display update");
         }
 
         // Check if the desired weight is reached
         if (dataProDisplay > gramu)
         {
             jesteToNeniDost = false;
-            ESP_LOGI(TAG, "Desired weight reached: %f grams", dataProDisplay);
+            ESP_LOGI(TAG11, "Desired weight reached: %f grams", dataProDisplay);
         }
     }
-    ESP_LOGI(TAG, "Weighing process completed");
+    ESP_LOGI(TAG11, "Weighing process completed");
 }
 
 esp_err_t uvodniStranaKsicht_handler(httpd_req_t *req)
@@ -704,14 +764,13 @@ esp_err_t ulozDataZFormulare_handler(httpd_req_t *req)
     {
         char doba[11];
         strcpy(doba, postrik_data.doba_postriku);
-        printf("uloz data handler doba%s", doba);
         prevodDatumu(doba);
         strcpy(postrik_data.doba_postriku, doba);
-        
+
         pridatPostrik(postrik_data);
         ESP_LOGI(TAG6, "Postřik přidán do databáze.");
     }
-    ESP_LOGI(TAG6, "\npocet postriku Save:%d\n", pocetPostriku);
+    ESP_LOGI(TAG6, "pocet postriku Save:%d", pocetPostriku);
     // Pokud je nastaven idStruktury2 a podmínky jsou splněny, odstraň postřik
     if (idStruktury2 != 0 && pocetPostriku > 1 && !uzJevDatabazi)
     {
@@ -775,7 +834,7 @@ esp_err_t zmenaDatVDatabaziId_handler(httpd_req_t *req)
     {
         if (ret == HTTPD_SOCK_ERR_TIMEOUT)
         {
-            ESP_LOGE(TAG4, "Timeout při čtení dat");
+            ESP_LOGE(TAG14, "Timeout při čtení dat");
         }
         return ESP_FAIL;
     }
@@ -783,7 +842,7 @@ esp_err_t zmenaDatVDatabaziId_handler(httpd_req_t *req)
     // Null-terminátor pro buffer
     buf[ret] = '\0';
 
-    ESP_LOGI(TAG4, "buf ve fci zmena dat:%s\n", buf);
+    ESP_LOGI(TAG14, "buf ve fci zmena dat:%s", buf);
     // Volání funkce pro zpracování JSON
     parse_json_for_id(buf, &postrik_data);
     idStruktury2 = postrik_data.id;
@@ -808,15 +867,15 @@ esp_err_t zmenDataVDatabaziPredvyplneni_handler(httpd_req_t *req)
     len = snprintf(chunk, sizeof(chunk), "[");
     if (len < 0)
     {
-        ESP_LOGE("JSON", "Failed to format JSON start bracket.");
+        ESP_LOGE(TAG8, "Failed to format JSON start bracket.");
         return ESP_FAIL;
     }
     if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK)
     {
-        ESP_LOGE("JSON", "Failed to send JSON start bracket chunk.");
+        ESP_LOGE(TAG8, "Failed to send JSON start bracket chunk.");
         return ESP_FAIL;
     }
-    ESP_LOGI("JSON", "Sent JSON start bracket.");
+    ESP_LOGI(TAG8, "Sent JSON start bracket.");
 
     // Příprava JSON objektu pro aktuální položku
 
@@ -835,10 +894,9 @@ esp_err_t zmenDataVDatabaziPredvyplneni_handler(httpd_req_t *req)
     }
     if (len < 0)
     {
-        ESP_LOGE("JSON", "Failed to format JSON object for item %d.", idStruktury2);
+        ESP_LOGE(TAG8, "Failed to format JSON object for item %d.", idStruktury2);
         return ESP_FAIL;
     }
-    printf("\nchunk z vyplnenihandler%s\n", chunk);
     // Odeslání JSON objektu po částech, pokud je příliš velký
     offset = 0;
     while (offset < len)
@@ -846,11 +904,11 @@ esp_err_t zmenDataVDatabaziPredvyplneni_handler(httpd_req_t *req)
         int chunk_len = (len - offset > CHUNK_SIZE) ? CHUNK_SIZE : (len - offset);
         if (httpd_resp_send_chunk(req, chunk + offset, chunk_len) != ESP_OK)
         {
-            ESP_LOGE("JSON", "Failed to send JSON object chunk for item %d.", idStruktury2);
+            ESP_LOGE(TAG8, "Failed to send JSON object chunk for item %d.", idStruktury2);
             return ESP_FAIL;
         }
         offset += chunk_len;
-        ESP_LOGI("JSON", "Sent %d bytes of JSON object chunk for item %d.", chunk_len, idStruktury2);
+        ESP_LOGI(TAG8, "Sent %d bytes of JSON object chunk for item %d.", chunk_len, idStruktury2);
     }
     //}
 
@@ -858,23 +916,23 @@ esp_err_t zmenDataVDatabaziPredvyplneni_handler(httpd_req_t *req)
     len = snprintf(chunk, sizeof(chunk), "]");
     if (len < 0)
     {
-        ESP_LOGE("JSON", "Failed to format JSON end bracket.");
+        ESP_LOGE(TAG8, "Failed to format JSON end bracket.");
         return ESP_FAIL;
     }
     if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK)
     {
-        ESP_LOGE("JSON", "Failed to send JSON end bracket chunk.");
+        ESP_LOGE(TAG8, "Failed to send JSON end bracket chunk.");
         return ESP_FAIL;
     }
-    ESP_LOGI("JSON", "Sent JSON end bracket.");
+    ESP_LOGI(TAG8, "Sent JSON end bracket.");
 
     // Indikace konce odpovědi (prázdný chunk)
     if (httpd_resp_send_chunk(req, NULL, 0) != ESP_OK)
     {
-        ESP_LOGE("JSON", "Failed to send final empty chunk to indicate end of response.");
+        ESP_LOGE(TAG8, "Failed to send final empty chunk to indicate end of response.");
         return ESP_FAIL;
     }
-    ESP_LOGI("JSON", "Completed sending JSON response.");
+    ESP_LOGI(TAG8, "Completed sending JSON response.");
 
     return ESP_OK;
 }
@@ -896,27 +954,25 @@ esp_err_t smazaniPostriku_handler(httpd_req_t *req)
             {
                 continue;
             }
-            ESP_LOGE(TAG, "Chyba při čtení požadavku");
+            ESP_LOGE(TAG13, "Chyba při čtení požadavku");
             return ESP_FAIL;
         }
         received += ret;
     }
     // Parsing JSON
     buf[received] = '\0';
-    printf("\n\nbuf:%s\n\n", buf);
+    ESP_LOGE(TAG13, "buf:%s", buf);
     json = cJSON_Parse(buf);
-
     if (json == NULL)
     {
-        ESP_LOGE(TAG, "Chyba při parsování JSON");
+        ESP_LOGE(TAG13, "Chyba při parsování JSON");
         // httpd_resp_send_400(req);
         return ESP_FAIL;
     }
-
     id = cJSON_GetObjectItem(json, "id");
     if (cJSON_IsNumber(id))
     {
-        ESP_LOGI(TAG, "Mazání položky s ID = %d", id->valueint);
+        ESP_LOGI(TAG13, "Mazání položky s ID = %d", id->valueint);
 
         delete_postrik(id->valueint);
 
@@ -1073,7 +1129,7 @@ void initialize_sntp(void)
 {
     ESP_LOGI(TAG5, "Initializing SNTP");
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(0, "time.google.com"); // pool.ntp.org
     esp_sntp_init();
 }
 void obtain_time(void)
@@ -1120,96 +1176,16 @@ static httpd_handle_t start_webserver(void)
     return server;
 }
 
-void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina)
-{
-    ESP_LOGI(TAG, "Zpracovávám data postřiku pro id: %d", idStruktury);
-
-    for (int i = 0; i < pocetPostriku; i++)
-    {
-        if (dataBazePostriku[i].id == idStruktury)
-        {
-            *mnozstviPostriku = dataBazePostriku[i].mnozstvi_postriku;
-            *pomerMichani = dataBazePostriku[i].pomer_michani;
-            strcpy(nazevPripravku, dataBazePostriku[i].nazev_pripravku);
-            strcpy(osetrovanaPlodina, dataBazePostriku[i].osetrovana_plodina);
-
-            ESP_LOGI(TAG, "Načteno: Množství postřiku = %.2f, Poměr míchání = %.2f, Název přípravku = %s, Ošetřovaná plodina = %s",
-                     *mnozstviPostriku, *pomerMichani, nazevPripravku, osetrovanaPlodina);
-            return;
-        }
-    }
-
-    ESP_LOGE(TAG, "Postřik s id %d nebyl nalezen.", idStruktury);
-}
-void aktualizujDisplejMnozstvi(double potrebneMnozstviPripravku)
-{
-    ESP_LOGI(TAG, "Aktualizuji displej s potřebným množstvím přípravku: %.2f g", potrebneMnozstviPripravku);
-
-    char mnozstviPripravku[20];
-    sprintf(mnozstviPripravku, "%.2f", potrebneMnozstviPripravku);
-
-    char str[30] = "Mnozstvi: ";
-    strcat(str, mnozstviPripravku);
-
-    // Aktualizace LCD displeje
-    lcd_update(str, 0);
-    lcd_update(" ", 1);
-}
-void cekejNaSpusteniVody()
-{
-    ESP_LOGI(TAG, "Čekám na spuštění vody uživatelem...");
-
-    while (!zahajenoPousteniVodyTlacitkem)
-    {
-        lcd_update("Pustit vodu?", 0);
-        lcd_update("Tlacitko 1", 1);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-
-    ESP_LOGI(TAG, "Spuštění vody potvrzeno uživatelem.");
-}
-void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
-{
-    ESP_LOGI(TAG, "Čekám na potvrzení dokončení míchání...");
-
-    while (!kvitujiFinaleMichani)
-    {
-        lcd_update("Tlacitko 3", 1);
-        lcd_update("Osetri ", 0);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        lcd_update(osetrovanaPlodina, 0);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-
-    ESP_LOGI(TAG, "Dokončení míchání potvrzeno.");
-}
-void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
-{
-    ESP_LOGI(TAG, "Aktualizuji den aplikace pro id: %d na %s", idStruktury, denAplikace);
-
-    for (int j = 0; j < pocetPostriku; j++)
-    {
-        if (dataBazePostriku[j].id == idStruktury)
-        {
-            strcpy(dataBazePostriku[j].denPosledniAplikacePostriku, denAplikace);
-            ESP_LOGI(TAG, "Den aplikace aktualizován pro postřik s id: %d", idStruktury);
-            return;
-        }
-    }
-
-    ESP_LOGE(TAG, "Nepodařilo se aktualizovat den aplikace pro id: %d. Postřik nebyl nalezen.", idStruktury);
-}
-
 void michaciProcedura(void *pvParameter)
 {
-    ESP_LOGI(TAG, "Spuštěna míchací procedura TASK.");
+    ESP_LOGI(TAG3, "Spuštěna míchací procedura.");
 
     while (1)
     {
         // Kontrola, zda má začít míchání
         if (zacaloMichani)
         {
-            ESP_LOGI(TAG, "Zahájeno míchání.");
+            ESP_LOGI(TAG3, "Zahájeno míchání.");
 
             double mnozstviPostriku = 0;
             double pomerMichani = 0;
@@ -1233,7 +1209,7 @@ void michaciProcedura(void *pvParameter)
                 xSemaphoreGive(Displej);
             }
 
-            ESP_LOGI(TAG, "Požadované množství přípravku: %.2f g", potrebneMnozstviPripravku);
+            ESP_LOGI(TAG3, "Požadované množství přípravku: %.2f g", potrebneMnozstviPripravku);
 
             // Zavolání funkce na zvážení potřebného množství přípravku
             zvazPripravek(potrebneMnozstviPripravku);
@@ -1246,7 +1222,7 @@ void michaciProcedura(void *pvParameter)
 
                 if (zahajenoPousteniVodyTlacitkem)
                 {
-                    ESP_LOGI(TAG, "Spouštím napouštění vody.");
+                    ESP_LOGI(TAG3, "Spouštím napouštění vody.");
                     napustVodu(1.4); // Spuštění napouštění vody s daným množstvím
                 }
 
@@ -1277,6 +1253,8 @@ void michaciProcedura(void *pvParameter)
 void mujTaskNaJadreJedna(void *pvParameter)
 {
     nactiPostrikData();
+    ESP_LOGI(TAG2, "PocetPostriku:%d", pocetPostriku);
+
     vTaskDelay(10 / portTICK_PERIOD_MS);
     while (1)
     {
