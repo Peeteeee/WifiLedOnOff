@@ -63,6 +63,7 @@
             <th>Množství Postřiku [l]</th>
             <th>Poměr Míchání [g/l]</th>
             <th>Doba Postřiku</th>
+            <th>Posledni osetreni</th>
           </tr>
         </thead>
         <tbody>
@@ -89,23 +90,24 @@
           data.forEach((item) => {
             const newRow = document.createElement("tr");
             newRow.innerHTML = `
-            <td>${item.id}</td>
-            <td>${item.nazev}</td>
-            <td>${item.plodina}</td>
-            <td>${item.mnozstvi}</td>
-            <td>${item.pomer}</td>
-            <td>${item.doba}</td>
-            <td>
-              <div class="action-buttons">
-                <button onclick="editRow(this, ${item.id})">Upravit</button>
-              </div>
-            </td>
-            <td>
-              <div class="action-buttons">
-                <button onclick="deleteRow(this, ${item.id})">Smazat</button>
-              </div>
-            </td>
-          `;
+                 <td>${item.id}</td>
+                 <td>${item.nazev}</td>
+                 <td>${item.plodina}</td>
+                 <td>${item.mnozstvi}</td>
+                 <td>${item.pomer}</td>
+                 <td>${item.doba}</td>
+                 <td>${item.posledni}</td>
+                 <td>
+                   <div class="action-buttons">
+                     <button onclick="editRow(this, ${item.id})">Upravit</button>
+                   </div>
+                 </td>
+                 <td>
+                   <div class="action-buttons">
+                     <button onclick="deleteRow(this, ${item.id})">Smazat</button>
+                   </div>
+                 </td>
+               `;
             tableBody.appendChild(newRow);
           });
         } catch (error) {
@@ -114,31 +116,45 @@
       }
 
       async function editRow(button, id) {
-        const row = button.closest("tr");
-        // Implementujte logiku pro upravu řádku
-        if (confirm("Opravdu chcete upravit tento řádek?")) {
-          try {
-            const response = await fetch(`http://192.168.0.199/zmenit`, {
-              method: "DELETE",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ id: id }),
-            });
+  // Najdi nejbližší <tr> element obsahující tlačítko, které bylo kliknuto
+  const row = button.closest("tr");
+  console.log("Upravuji řádek s ID:", id);
 
-            if (response.ok) {
-              location.reload();
-              alert("Řádek byl úspěšně upraven");
-            } else {
-              const errorData = await response.json();
-              alert(`Chyba při uprave řádku: ${errorData.message}`);
-            }
-          } catch (error) {
-            console.error("Chyba při uprave řádku:", error);
-            alert("Došlo k chybě při uprave řádku");
-          }
-        }
+  // Zobrazení potvrzovacího dialogu pro uživatele
+  if (confirm("Opravdu chcete upravit tento řádek?")) {
+    try {
+      // Zde můžete přidat další logiku pro úpravu řádku, pokud je potřeba
+
+      console.log("Odesílám požadavek na server s ID:", id);
+
+      // Odeslání údajů do ESP32
+      const response = await fetch("http://192.168.0.199/zmenit2", {
+        method: "POST", // Metoda POST pro odeslání dat
+        headers: {
+          "Content-Type": "application/json", // Nastavení typu obsahu na JSON
+        },
+        body: JSON.stringify({ id: id }), // Převod dat na JSON formát
+      });
+
+      console.log("Požadavek byl odeslán, čekám na odpověď...");
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Úspěch, odpověď ze serveru:", data); // Výpis úspěšné odpovědi
+
+        // Přesměrování na stránku pro úpravu
+        window.location.href = "/zmenit";
+      } else {
+        const errorData = await response.json();
+        console.error("Chyba při úpravě řádku:", errorData);
+        alert(`Chyba při úpravě řádku: ${errorData.message}`);
       }
+    } catch (error) {
+      console.error("Nastala chyba během požadavku:", error.message);
+      alert(`Nastala chyba během požadavku: ${error.message}`);
+    }
+  }
+}
 
       async function deleteRow(button, id) {
         const row = button.closest("tr");
@@ -154,7 +170,7 @@
             });
 
             if (response.ok) {
-                location.reload();
+              location.reload();
               alert("Řádek byl úspěšně smazán");
             } else {
               const errorData = await response.json();

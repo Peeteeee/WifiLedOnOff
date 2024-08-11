@@ -39,21 +39,20 @@
 #define ledka GPIO_NUM_32
 #define FILE_PATH "/spiffs/uvodniStrana.html"
 #define FILE_PATH2 "/spiffs/vkladaniDat.html"
-#define FILE_PATH3 "/spiffs/poleStruktur.bin"
-#define IP_ADRESA_ESP32 "192.168.0.111"
-#define relePin GPIO_NUM_2
+#define FILE_PATH3 "/spiffs/zmenaDat.html"
+#define FILE_PATH4 "/spiffs/poleStruktur.bin"
+
 #define MAX_RUZNYCH_POSTRIKU 20
 #define EXAMPLE_ESP_WIFI_SSID "TP-LINK_0D7A"
 #define EXAMPLE_ESP_WIFI_PASS "cabracina128"
 #define MAX_DATA_LENGTH 256
 #define CHUNK_SIZE 1024
-#define LCD_MAX_CHARS 32 // LCD1602 has 2 lines, each can hold up to 16 characters
-// Buffer to hold the last displayed text
-
+#define LCD_MAX_CHARS 32
 char lcd_buffer[LCD_MAX_CHARS];
 int pocetPostriku = 0;
-int next_id = 1; // Globální proměnná pro sledování dalšího ID
+int next_id = 1;
 int idStruktury = 0;
+int idStruktury2 = 0;
 static const char *TAG = "HTTP_SERVER";
 static const char *TAG4 = "JSON_Parser";
 //static const char *mujTag = "MUJTAG";

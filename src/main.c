@@ -58,7 +58,6 @@ void prevodDatumu(char *datum)
     datumKuprave[5] = '\0';
     strcpy(datum, datumKuprave);
 }
-
 int generate_id()
 {
     uint16_t max = 1; // Inicializujeme max na 0, což umožní správnou funkci i pro prázdnou databázi.
@@ -78,7 +77,7 @@ int generate_id()
 }
 void ulozPostrikData()
 {
-    FILE *soubor = fopen(FILE_PATH3, "wb");
+    FILE *soubor = fopen(FILE_PATH4, "wb");
     if (soubor == NULL)
     {
         perror("Chyba při otevírání souboru");
@@ -103,9 +102,24 @@ void pridatPostrik(PostrikData novyPostrik)
         ulozPostrikData(); // do spiffs/poleStruktur
     }
 }
+ void seradDatabaziPodleData()
+ {
+    printf("datum postriku v serad databazi:%s\n", dataBazePostriku[0].doba_postriku);
+//     for (int i = 0; i < pocetPostriku - 1; i++)
+//     {
+//         for (int j = 1; j < pocetPostriku; j++)
+//         {
+//             //dd.mm
+//             if (dataBazePostriku[i].doba_postriku[4] > dataBazePostriku[j].doba_postriku[4])
+//             {
+
+//             }
+//         }
+//     }
+ }
 void nactiPostrikData()
 {
-    FILE *soubor = fopen(FILE_PATH3, "rb");
+    FILE *soubor = fopen(FILE_PATH4, "rb");
     if (soubor == NULL)
     {
         perror("Chyba při otevírání souboru");
@@ -115,6 +129,7 @@ void nactiPostrikData()
     fread(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
 
     fclose(soubor);
+    seradDatabaziPodleData();
 }
 int porovnejPostrikData(PostrikData *a, PostrikData *b)
 {
@@ -139,6 +154,38 @@ int porovnejPostrikData(PostrikData *a, PostrikData *b)
         return 0;
     }
     return 1; // Struktury jsou stejné
+}
+void parse_json_for_id(const char *json_str, PostrikData *data)
+{
+    // Načtení JSON řetězce do cJSON struktury
+    cJSON *json = cJSON_Parse(json_str);
+    if (json == NULL)
+    {
+        ESP_LOGE(TAG4, "Chyba při parsování JSON: Neplatný JSON řetězec");
+        return;
+    }
+
+    // Získání položky 'id' z JSON objektu
+    cJSON *id = cJSON_GetObjectItem(json, "id");
+
+    // Kontrola, zda byla položka 'id' nalezena a je typu číslo
+    if (id == NULL)
+    {
+        ESP_LOGE(TAG4, "Položka 'id' nebyla nalezena v JSON objektu");
+    }
+    else if (cJSON_IsNumber(id))
+    {
+        // Uložení hodnoty id do struktury PostrikData
+        data->id = id->valueint;
+        ESP_LOGI(TAG4, "Úspěšně načteno id: %d", data->id);
+    }
+    else
+    {
+        ESP_LOGE(TAG4, "Položka 'id' není typu číslo");
+    }
+
+    // Uvolnění cJSON struktury po dokončení
+    cJSON_Delete(json);
 }
 void parse_json(const char *json_str, PostrikData *data)
 {
@@ -237,7 +284,7 @@ void zvazPripravek(double gramu)
 
     // Initialize device and check for errors
     ESP_ERROR_CHECK(hx711_init(&dev));
-    tare(); 
+    tare();
     ESP_LOGI(TAG, "Device initialized and tared");
 
     bool jesteToNeniDost = true; // Variable to control the weighing loop
@@ -311,7 +358,6 @@ esp_err_t uvodniStranaKsicht_handler(httpd_req_t *req)
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
-
     // Čtení souboru do bufferu
     fread(buffer, 1, file_size, file);
     buffer[file_size] = '\0'; // Přidání nulového terminátoru
@@ -372,13 +418,14 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
 
         // Příprava JSON objektu pro aktuální položku
         len = snprintf(chunk, sizeof(chunk),
-                       "{\"id\":%d,\"nazev\":\"%s\",\"plodina\":\"%s\",\"mnozstvi\":%.2f,\"pomer\":%.2f,\"doba\":\"%s\"}",
+                       "{\"id\":%d,\"nazev\":\"%s\",\"plodina\":\"%s\",\"mnozstvi\":%.2f,\"pomer\":%.2f,\"doba\":\"%s\",\"posledni\":\"%s\"}",
                        dataBazePostriku[i].id,
                        dataBazePostriku[i].nazev_pripravku,
                        dataBazePostriku[i].osetrovana_plodina,
                        dataBazePostriku[i].mnozstvi_postriku,
                        dataBazePostriku[i].pomer_michani,
-                       dataBazePostriku[i].doba_postriku);
+                       dataBazePostriku[i].doba_postriku,
+                       dataBazePostriku[i].denPosledniAplikacePostriku);
         if (len < 0)
         {
             ESP_LOGE("JSON", "Failed to format JSON object for item %d.", i);
@@ -424,6 +471,7 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
 
     return ESP_OK;
 }
+
 esp_err_t vkladaniDatKsicht_handler(httpd_req_t *req)
 {
 
@@ -501,63 +549,191 @@ esp_err_t ulozDataZFormulare_handler(httpd_req_t *req)
         pridatPostrik(postrik_data);
     }
     ESP_LOGI(TAG4, "pocet postriku:%d", pocetPostriku);
+    bool jsouDvaStejny = false;
+    for (int x = 0; x < pocetPostriku - 1; x++)
+    {
+        for (int y = 1; y < pocetPostriku; y++)
+        {
 
+            if (
+                dataBazePostriku[x].nazev_pripravku == dataBazePostriku[y].nazev_pripravku &&
+                dataBazePostriku[x].osetrovana_plodina == dataBazePostriku[y].osetrovana_plodina &&
+                dataBazePostriku[x].mnozstvi_postriku == dataBazePostriku[y].mnozstvi_postriku &&
+                dataBazePostriku[x].pomer_michani == dataBazePostriku[y].pomer_michani &&
+                dataBazePostriku[x].doba_postriku == dataBazePostriku[y].doba_postriku)
+            {
+                jsouDvaStejny = true;
+            }
+        }
+    }
+    printf("id struktury2 = :%d\n", idStruktury2);
+    printf("jsoudvastejny = :%d\n", jsouDvaStejny);
+    printf("pocet postriku = :%d\n", pocetPostriku);
+    if (idStruktury2 != 0 && pocetPostriku > 1 && !uzJevDatabazi)
+    {
+        delete_postrik(idStruktury2);
+    }
+
+    idStruktury2 = 0;
     // Odpověď na POST požadavek
     const char resp[] = "{\"status\":\"success\"}";
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
-esp_err_t zmenaDatVDatabazi_handler(httpd_req_t *req)
+esp_err_t zmenaDatVDatabaziKsicht_handler(httpd_req_t *req)
 {
-    ESP_LOGI("ZMENA", "jsem ve funkci zmenaDatVDatabazi_handler\n\n");
-    // Funkce pro zpracování požadavku na úpravu řádku
-
-    char buf[100];
-    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (len < 0)
+    FILE *file = fopen(FILE_PATH3, "r");
+    if (file == NULL)
     {
-        if (len == HTTPD_SOCK_ERR_TIMEOUT)
+        ESP_LOGE("FILE", "Failed to open file for reading");
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+    // Získání velikosti souboru
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Alokace paměti pro obsah souboru
+
+    char *buffer = (char *)malloc(file_size + 1);
+    if (buffer == NULL)
+    {
+        ESP_LOGE("FILE", "Failed to allocate memory for file content");
+        fclose(file);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    // Čtení souboru do bufferu
+    fread(buffer, 1, file_size, file);
+    buffer[file_size] = '\0'; // Přidání nulového terminátoru
+
+    fclose(file);
+
+    httpd_resp_set_type(req, "text/html; charset=UTF-8");
+    httpd_resp_send(req, buffer, file_size);
+    free(buffer);
+    return ESP_OK;
+}
+esp_err_t zmenaDatVDatabaziId_handler(httpd_req_t *req)
+{
+
+    // Příprava bufferu pro příjem dat
+    char buf[512];
+    int ret;
+
+    // Čtení dat z požadavku
+    ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret < 0)
+    {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT)
         {
-            httpd_resp_send_408(req);
+            ESP_LOGE(TAG4, "Timeout při čtení dat");
         }
         return ESP_FAIL;
     }
 
-    buf[len] = '\0'; // Null-terminate the received data
+    // Null-terminátor pro buffer
+    buf[ret] = '\0';
 
-    // Přečtěte ID z JSON těla
-    int id = -1;
-    sscanf(buf, "{\"id\":%d}", &id);
+    ESP_LOGI(TAG4, "buf ve fci zmena dat:%s\n", buf);
+    // Volání funkce pro zpracování JSON
+    parse_json_for_id(buf, &postrik_data);
+    idStruktury2 = postrik_data.id;
 
-    // Prohledejte pole pro odpovídající ID
-    bool found = false;
-    for (int i = 0; i < pocetPostriku; i++)
-    {
-        if (dataBazePostriku[i].id == id)
-        {
-            // Upravte požadované údaje (např. změna názvu)
-
-            found = true;
-            break;
-        }
-    }
-
-    // Vytvořte odpověď
-    if (found)
-    {
-        const char *response = "{\"message\":\"Řádek byl úspěšně upraven\"}";
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, response, strlen(response));
-    }
-    else
-    {
-        const char *response = "{\"message\":\"Řádek s tímto ID nenalezen\"}";
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, response, strlen(response));
-    }
+    // Odpověď na POST požadavek
+    const char resp[] = "{\"status\":\"success\"}";
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     return ESP_OK;
 }
+
+esp_err_t zmenDataVDatabaziPredvyplneni_handler(httpd_req_t *req)
+{
+    // Buffer pro dočasné uchování JSON dat
+    char chunk[CHUNK_SIZE];
+    int len = 0;
+    int offset = 0;
+
+    // Nastavení typu odpovědi na JSON
+    httpd_resp_set_type(req, "application/json");
+
+    // Začátek JSON pole
+    len = snprintf(chunk, sizeof(chunk), "[");
+    if (len < 0)
+    {
+        ESP_LOGE("JSON", "Failed to format JSON start bracket.");
+        return ESP_FAIL;
+    }
+    if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK)
+    {
+        ESP_LOGE("JSON", "Failed to send JSON start bracket chunk.");
+        return ESP_FAIL;
+    }
+    ESP_LOGI("JSON", "Sent JSON start bracket.");
+
+    // Příprava JSON objektu pro aktuální položku
+
+    for (int j = 0; j < pocetPostriku; j++)
+    {
+        if (dataBazePostriku[j].id == idStruktury2)
+        {
+            len = snprintf(chunk, sizeof(chunk), "{\"nazev\":\"%s\",\"plodina\":\"%s\",\"mnozstvi\":%.2f,\"pomer\":%.2f,\"doba\":\"%s\"}",
+
+                           dataBazePostriku[j].nazev_pripravku,
+                           dataBazePostriku[j].osetrovana_plodina,
+                           dataBazePostriku[j].mnozstvi_postriku,
+                           dataBazePostriku[j].pomer_michani,
+                           dataBazePostriku[j].doba_postriku);
+        }
+    }
+    if (len < 0)
+    {
+        ESP_LOGE("JSON", "Failed to format JSON object for item %d.", idStruktury2);
+        return ESP_FAIL;
+    }
+    printf("\nchunk z vyplnenihandler%s\n", chunk);
+    // Odeslání JSON objektu po částech, pokud je příliš velký
+    offset = 0;
+    while (offset < len)
+    {
+        int chunk_len = (len - offset > CHUNK_SIZE) ? CHUNK_SIZE : (len - offset);
+        if (httpd_resp_send_chunk(req, chunk + offset, chunk_len) != ESP_OK)
+        {
+            ESP_LOGE("JSON", "Failed to send JSON object chunk for item %d.", idStruktury2);
+            return ESP_FAIL;
+        }
+        offset += chunk_len;
+        ESP_LOGI("JSON", "Sent %d bytes of JSON object chunk for item %d.", chunk_len, idStruktury2);
+    }
+    //}
+
+    // Konec JSON pole
+    len = snprintf(chunk, sizeof(chunk), "]");
+    if (len < 0)
+    {
+        ESP_LOGE("JSON", "Failed to format JSON end bracket.");
+        return ESP_FAIL;
+    }
+    if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK)
+    {
+        ESP_LOGE("JSON", "Failed to send JSON end bracket chunk.");
+        return ESP_FAIL;
+    }
+    ESP_LOGI("JSON", "Sent JSON end bracket.");
+
+    // Indikace konce odpovědi (prázdný chunk)
+    if (httpd_resp_send_chunk(req, NULL, 0) != ESP_OK)
+    {
+        ESP_LOGE("JSON", "Failed to send final empty chunk to indicate end of response.");
+        return ESP_FAIL;
+    }
+    ESP_LOGI("JSON", "Completed sending JSON response.");
+
+    return ESP_OK;
+}
+
 esp_err_t smazaniPostriku_handler(httpd_req_t *req)
 {
     // Buffer pro příjem dat
@@ -638,10 +814,20 @@ httpd_uri_t uri_ulozDataZFormulare = {
     .handler = ulozDataZFormulare_handler,
     .user_ctx = NULL};
 // zmena dat urciteho postriku. stejne okno jako /vkladanidat ale predvyplnene
-httpd_uri_t uri_zmenDataVDatabazi = {
+httpd_uri_t uri_zmenDataVDatabaziKsicht = {
     .uri = "/zmenit",
-    .method = HTTP_DELETE,
-    .handler = zmenaDatVDatabazi_handler,
+    .method = HTTP_GET,
+    .handler = zmenaDatVDatabaziKsicht_handler,
+    .user_ctx = NULL};
+httpd_uri_t uri_zmenDataVDatabaziId = {
+    .uri = "/zmenit2",
+    .method = HTTP_POST,
+    .handler = zmenaDatVDatabaziId_handler,
+    .user_ctx = NULL};
+httpd_uri_t uri_zmenDataVDatabaziPredvyplneni = {
+    .uri = "/ziskatData",
+    .method = HTTP_GET,
+    .handler = zmenDataVDatabaziPredvyplneni_handler,
     .user_ctx = NULL};
 // smazani zaznamu z databaze
 httpd_uri_t uri_delete_postrik = {
@@ -700,7 +886,9 @@ static httpd_handle_t start_webserver(void)
         httpd_register_uri_handler(server, &uri_vkladaniDatKsicht);
         httpd_register_uri_handler(server, &uri_ulozDataZFormulare);
         httpd_register_uri_handler(server, &uri_nahlasPostriky);
-        httpd_register_uri_handler(server, &uri_zmenDataVDatabazi);
+        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziKsicht);
+        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziId);
+        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziPredvyplneni);
     }
     return server;
 }
@@ -949,11 +1137,12 @@ void michaciProcedura(void *pvParameter)
                 sprintf(mnozstviPripravku, "%.2f", potrebneMnozstviPripravku);
                 printf("\nmichaci procedura, uz micham6\n");
                 char str[] = "Mnozstvi:";
-                char strg[] = "g";
                 printf("\nmichaci procedura, uz micham6.1\n");
                 strcat(str, mnozstviPripravku);
-                printf("\nmichaci procedura, uz micham6.2\n");
-                //strcat(str, strg);
+
+                // char ch = 'g';
+                // strcat(str, &ch);
+
                 printf("\nmichaci procedura, uz micham7\n");
 
                 lcd_update(str, 0);

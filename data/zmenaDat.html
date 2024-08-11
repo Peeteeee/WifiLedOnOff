@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Nastavení kódování znaků na UTF-8 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Zajistí, že stránka bude responzivní -->
+    <title>Upravte Data Postřiku</title>
+    <style>
+      /* CSS stylizace pro tmavší vzhled */
+      body {
+        font-family: Arial, sans-serif; /* Nastavení písma pro celé tělo stránky */
+        margin: 20px; /* Vnější okraje stránky */
+        background-color: #333; /* Tmavá barva pozadí stránky */
+        color: #fff; /* Světlá barva textu */
+      }
+      h1 {
+        text-align: center; /* Zarovnání nadpisu do středu */
+      }
+      form {
+        max-width: 400px; /* Maximální šířka formuláře */
+        margin: 0 auto; /* Zarovnání formuláře do středu */
+        padding: 20px; /* Vnitřní okraje formuláře */
+        border: 1px solid #555; /* Tmavší okraje formuláře */
+        border-radius: 5px; /* Zaoblení rohů formuláře */
+        background-color: #444; /* Tmavší barva pozadí formuláře */
+      }
+      label {
+        display: block; /* Zobrazení každého štítku na novém řádku */
+        margin-bottom: 5px; /* Spodní okraj štítku */
+        font-weight: bold; /* Tučné písmo pro štítky */
+      }
+      input {
+        width: 100%; /* Šířka vstupních polí */
+        padding: 8px; /* Vnitřní okraje vstupních polí */
+        margin-bottom: 15px; /* Spodní okraj vstupních polí */
+        border: 1px solid #555; /* Tmavší okraje vstupních polí */
+        border-radius: 3px; /* Zaoblení rohů vstupních polí */
+        background-color: #666; /* Tmavší barva pozadí vstupních polí */
+        color: #fff; /* Světlá barva textu ve vstupních polích */
+        box-sizing: border-box; /* Zahrnutí vnitřních okrajů a okrajů do celkové šířky a výšky */
+      }
+      button {
+        width: 100%; /* Šířka tlačítka */
+        padding: 10px; /* Vnitřní okraje tlačítka */
+        background-color: #4caf50; /* Barva pozadí tlačítka */
+        color: white; /* Barva textu tlačítka */
+        border: none; /* Žádné okraje tlačítka */
+        border-radius: 3px; /* Zaoblení rohů tlačítka */
+        cursor: pointer; /* Změna kurzoru při najetí myší */
+      }
+      button:hover {
+        background-color: #45a049; /* Barva pozadí tlačítka při najetí myší */
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Upravte Data Postřiku</h1>
+    <!-- Upravený nadpis -->
+    <form id="dataForm">
+      <!-- Formulář s ID dataForm -->
+      <label for="pripravekInput">Název Přípravku:</label>
+      <input type="text" id="pripravekInput" name="pripravekInput" required />
+      <!-- Textové pole pro přípravek -->
+
+      <label for="plodinaInput">Ošetřovaná Plodina:</label>
+      <input type="text" id="plodinaInput" name="plodinaInput" required />
+      <!-- Textové pole pro plodinu -->
+
+      <label for="mnozstviInput">Množství postřiku [l]:</label>
+      <input
+        type="number"
+        step="0.1"
+        min="0"
+        id="mnozstviInput"
+        name="mnozstviInput"
+        required
+      />
+      <!-- Číselné pole pro množství postřiku -->
+
+      <label for="pomerInput">Poměr míchání [g/l]:</label>
+      <input
+        type="number"
+        step="0.1"
+        min="0"
+        id="pomerInput"
+        name="pomerInput"
+        required
+      />
+      <!-- Číselné pole pro poměr míchání -->
+
+      <label for="dobaPostrikuInput">Doba postřiku:</label>
+      <input
+        type="date"
+        id="dobaPostrikuInput"
+        name="dobaPostrikuInput"
+        required
+      />
+      <!-- Datumové pole pro dobu postřiku -->
+
+      <button type="submit">Odeslat</button>
+      <!-- Tlačítko pro odeslání formuláře -->
+    </form>
+
+    <script>
+      // Funkce pro předvyplnění formulářových polí
+      function predvyplnitFormular(nazev,plodina, mnozstvi, pomer, doba) {
+        document.getElementById("pripravekInput").value = nazev;
+        document.getElementById("plodinaInput").value = plodina;
+        document.getElementById("mnozstviInput").value = mnozstvi;
+        document.getElementById("pomerInput").value = pomer;
+        document.getElementById("dobaPostrikuInput").value = doba;
+      }
+
+      // Načtení dat ze serveru a předvyplnění formuláře při načtení stránky
+      window.onload = async function () {
+        console.log("Načítání dat ze serveru...");
+
+        fetch("http://192.168.0.199/ziskatData")
+          .then((res) => res.json()) // Převedení JSON odpovědi na JS objekt
+          .then((data) => {
+            console.log(data); // Zde máte přístup k načteným datům
+            const prvniObjekt = data[0];
+            // Přístup k hodnotě 'nazev'
+
+            // Přístup k jednotlivým hodnotám
+            const doba = prvniObjekt.doba;
+            const mnozstvi = prvniObjekt.mnozstvi;
+            const nazev = prvniObjekt.nazev;
+            const plodina = prvniObjekt.plodina;
+            const pomer = prvniObjekt.pomer;
+predvyplnitFormular(nazev, plodina, mnozstvi, pomer, doba);
+            // Zobrazení hodnot v konzoli
+            console.log("Doba:", doba);
+            console.log("Množství:", mnozstvi);
+            console.log("Název:", nazev);
+            console.log("Plodina:", plodina);
+            console.log("Poměr:", pomer);
+          })
+          .catch((error) => {
+            console.error("Chyba při načítání dat:", error); // Výpis chyby při načítání dat
+          });
+      };
+
+      // Přidání posluchače událostí na formulář
+      document
+        .getElementById("dataForm")
+        .addEventListener("submit", function (event) {
+          event.preventDefault(); // Zabránění standardnímu odeslání formuláře
+
+          console.log("Formulář odeslán, zpracování dat..."); // Logování odeslání formuláře
+
+          // Získání hodnot z formuláře
+          const pripravek = document.getElementById("pripravekInput").value;
+          const plodina = document.getElementById("plodinaInput").value;
+          const mnozstvi = parseFloat(
+            document.getElementById("mnozstviInput").value
+          );
+          const pomer = parseFloat(document.getElementById("pomerInput").value);
+          const dobaPostriku =
+            document.getElementById("dobaPostrikuInput").value;
+
+          console.log("Odesílání následujících dat na server:", {
+            pripravek: pripravek,
+            plodina: plodina,
+            mnozstvi: mnozstvi,
+            pomer: pomer,
+            dobaPostriku: dobaPostriku,
+          }); // Logování dat před odesláním
+
+          // Odeslání údajů do ESP32
+          fetch("http://192.168.0.199/ulozit", {
+            method: "POST", // Metoda POST pro odeslání dat
+            headers: {
+              "Content-Type": "application/json", // Nastavení typu obsahu na JSON
+            },
+            body: JSON.stringify({
+              pripravek: pripravek,
+              plodina: plodina,
+              mnozstvi: mnozstvi,
+              pomer: pomer,
+              dobaPostriku: dobaPostriku,
+            }), // Převod dat na JSON formát
+          })
+            .then((response) => {
+              console.log("Odpověď serveru přijata, stav:", response.status); // Logování stavu odpovědi
+              return response.json(); // Zpracování odpovědi na formát JSON
+            })
+            .then((data) => {
+              console.log("Úspěch:", data); // Výpis úspěšné odpovědi
+              window.location.href = "/"; // Přesměrování na úvodní stránku
+            })
+            .catch((error) => {
+              console.error("Chyba při odesílání dat na server:", error); // Výpis chyby při odesílání
+            });
+        });
+    </script>
+  </body>
+</html>
