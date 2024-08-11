@@ -73,8 +73,13 @@ int prevodniFaktorB = 1000;
 
 static const char *TAG = "HTTP_SERVER";
 static const char *TAG4 = "JSON_Parser";
-//static const char *mujTag = "MUJTAG";
+
 static const char *TAG5 = "TIME";
+static const char *TAG6 = "ulozDataZFormulare_handler";
+static const char *TAG7 = "prevodDatumu";
+//static const char *TAG8 = "tednevim";
+static const char *TAG9 = "nactiPostrikData";
+// static const char *TAG5 = "TIME";
 
 bool zacaloMichani = false;
 bool zahajenoPousteniVodyTlacitkem = false;

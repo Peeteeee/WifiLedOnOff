@@ -104,7 +104,7 @@
 
     <script>
       // Funkce pro předvyplnění formulářových polí
-      function predvyplnitFormular(nazev,plodina, mnozstvi, pomer, doba) {
+      function predvyplnitFormular(nazev, plodina, mnozstvi, pomer, doba) {
         document.getElementById("pripravekInput").value = nazev;
         document.getElementById("plodinaInput").value = plodina;
         document.getElementById("mnozstviInput").value = mnozstvi;
@@ -129,7 +129,7 @@
             const nazev = prvniObjekt.nazev;
             const plodina = prvniObjekt.plodina;
             const pomer = prvniObjekt.pomer;
-predvyplnitFormular(nazev, plodina, mnozstvi, pomer, doba);
+            predvyplnitFormular(nazev, plodina, mnozstvi, pomer, doba);
             // Zobrazení hodnot v konzoli
             console.log("Doba:", doba);
             console.log("Množství:", mnozstvi);

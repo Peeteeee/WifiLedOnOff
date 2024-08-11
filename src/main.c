@@ -57,9 +57,9 @@ int delete_postrik(int id)
             }
             // Snížit počet postřikových záznamů
             pocetPostriku--;
-
             // Zavolat funkci pro uložení aktualizovaných postřikových dat
             ulozPostrikData();
+            printf("\npocet postriku Delete:%d\n", pocetPostriku);
 
             // Předčasně ukončit smyčku po úspěšném smazání
             break;
@@ -159,14 +159,6 @@ bool mamNecoKmichani(void)
         strcpy(datumPostriku, dataBazePostriku[i].doba_postriku);
         strcpy(denAplikace, dataBazePostriku[i].denPosledniAplikacePostriku);
 
-        // Assuming prevodDatumu converts the date to a specific format
-        prevodDatumu(datumPostriku);
-
-        // Log the current state of the variables
-        // printf("Kontrola postřiku %d:\n", i + 1);
-        // printf(" - Datum postřiku: %s\n", datumPostriku);
-        // printf(" - Den poslední aplikace: %s\n", denAplikace);
-
         // Condition to check if the spray needs mixing
         if ((strcmp(datumTed, datumPostriku) == 0) && (strcmp(datumTed, denAplikace) != 0))
         {
@@ -189,6 +181,7 @@ void nactiPostrikData()
     fread(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
 
     fclose(soubor);
+    ESP_LOGI(TAG9, "jsem v nactipostrikdata");
     seradDatabaziPodleData();
 }
 void napustVodu(double litru)
@@ -317,16 +310,30 @@ int porovnejPostrikData(PostrikData *a, PostrikData *b)
 }
 void prevodDatumu(char *datum)
 {
-    // 2024-08-05
-    // 05-08
-    char datumKuprave[6];
-    datumKuprave[0] = datum[8];
-    datumKuprave[1] = datum[9];
-    datumKuprave[2] = '-';
-    datumKuprave[3] = datum[5];
-    datumKuprave[4] = datum[6];
-    datumKuprave[5] = '\0';
+    printf("prevod datumu:%s\n", datum);
+    // Zajištění, že vstupní datum má správnou délku (10 znaků pro formát YYYY-MM-DD)
+    if (strlen(datum) != 10)
+    {
+        ESP_LOGE(TAG7, "Neplatný formát data. Očekáván formát YYYY-MM-DD.");
+        return;
+    }
+
+    // Vytvoření bufferu pro upravené datum ve formátu DD-MM
+    char datumKuprave[6];  // 5 znaků + null-terminátor
+
+    // Kopírování dne a měsíce do nového formátu
+    datumKuprave[0] = datum[8];  // Den - první číslice
+    datumKuprave[1] = datum[9];  // Den - druhá číslice
+    datumKuprave[2] = '-';       // Oddělovač "-"
+    datumKuprave[3] = datum[5];  // Měsíc - první číslice
+    datumKuprave[4] = datum[6];  // Měsíc - druhá číslice
+    datumKuprave[5] = '\0';      // Null-terminátor
+
+    // Přepis původního data novým formátem
     strcpy(datum, datumKuprave);
+
+    // // Logování úspěšné konverze
+    // ESP_LOGI(TAG4, "Datum úspěšně převedeno na formát DD-MM: %s", datum);
 }
 void pridatPostrik(PostrikData novyPostrik)
 {
@@ -667,56 +674,56 @@ esp_err_t ulozDataZFormulare_handler(httpd_req_t *req)
     {
         if (ret == HTTPD_SOCK_ERR_TIMEOUT)
         {
-            ESP_LOGE(TAG4, "Timeout při čtení dat");
+            ESP_LOGE(TAG4, "Timeout při čtení dat z požadavku");
+        }
+        else
+        {
+            ESP_LOGE(TAG4, "Chyba při čtení dat z požadavku: %d", ret);
         }
         return ESP_FAIL;
     }
 
     // Null-terminátor pro buffer
     buf[ret] = '\0';
+    ESP_LOGI(TAG6, "Přijatá data: %s", buf);
 
     // Volání funkce pro zpracování JSON
     parse_json(buf, &postrik_data);
-    ESP_LOGI(TAG4, "buf:%s", buf);
-
     bool uzJevDatabazi = false;
     for (int i = 0; i < pocetPostriku; i++)
     {
         if (porovnejPostrikData(&dataBazePostriku[pocetPostriku - 1 - i], &postrik_data))
         {
             uzJevDatabazi = true;
+            ESP_LOGI(TAG6, "Postřik již existuje v databázi.");
+            break; // Pokud je postřik nalezen, nemusíme procházet zbytek databáze
         }
     }
+    // Pokud postřik neexistuje v databázi, přidej ho
     if (!uzJevDatabazi)
     {
+        char doba[11];
+        strcpy(doba, postrik_data.doba_postriku);
+        printf("uloz data handler doba%s", doba);
+        prevodDatumu(doba);
+        strcpy(postrik_data.doba_postriku, doba);
+        
         pridatPostrik(postrik_data);
+        ESP_LOGI(TAG6, "Postřik přidán do databáze.");
     }
-    ESP_LOGI(TAG4, "pocet postriku:%d", pocetPostriku);
-    bool jsouDvaStejny = false;
-    for (int x = 0; x < pocetPostriku - 1; x++)
-    {
-        for (int y = 1; y < pocetPostriku; y++)
-        {
-
-            if (
-                dataBazePostriku[x].nazev_pripravku == dataBazePostriku[y].nazev_pripravku &&
-                dataBazePostriku[x].osetrovana_plodina == dataBazePostriku[y].osetrovana_plodina &&
-                dataBazePostriku[x].mnozstvi_postriku == dataBazePostriku[y].mnozstvi_postriku &&
-                dataBazePostriku[x].pomer_michani == dataBazePostriku[y].pomer_michani &&
-                dataBazePostriku[x].doba_postriku == dataBazePostriku[y].doba_postriku)
-            {
-                jsouDvaStejny = true;
-            }
-        }
-    }
+    ESP_LOGI(TAG6, "\npocet postriku Save:%d\n", pocetPostriku);
+    // Pokud je nastaven idStruktury2 a podmínky jsou splněny, odstraň postřik
     if (idStruktury2 != 0 && pocetPostriku > 1 && !uzJevDatabazi)
     {
         delete_postrik(idStruktury2);
+        ESP_LOGI(TAG6, "Postřik s idStruktury2 byl odstraněn.");
     }
     idStruktury2 = 0;
-    // Odpověď na POST požadavek
+    // Odpověď na POST požadavek s potvrzením úspěchu
     const char resp[] = "{\"status\":\"success\"}";
     httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    ESP_LOGI(TAG6, "Odpověď odeslána: %s", resp);
+
     return ESP_OK;
 }
 esp_err_t zmenaDatVDatabaziKsicht_handler(httpd_req_t *req)
@@ -1113,92 +1120,157 @@ static httpd_handle_t start_webserver(void)
     return server;
 }
 
+void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina)
+{
+    ESP_LOGI(TAG, "Zpracovávám data postřiku pro id: %d", idStruktury);
+
+    for (int i = 0; i < pocetPostriku; i++)
+    {
+        if (dataBazePostriku[i].id == idStruktury)
+        {
+            *mnozstviPostriku = dataBazePostriku[i].mnozstvi_postriku;
+            *pomerMichani = dataBazePostriku[i].pomer_michani;
+            strcpy(nazevPripravku, dataBazePostriku[i].nazev_pripravku);
+            strcpy(osetrovanaPlodina, dataBazePostriku[i].osetrovana_plodina);
+
+            ESP_LOGI(TAG, "Načteno: Množství postřiku = %.2f, Poměr míchání = %.2f, Název přípravku = %s, Ošetřovaná plodina = %s",
+                     *mnozstviPostriku, *pomerMichani, nazevPripravku, osetrovanaPlodina);
+            return;
+        }
+    }
+
+    ESP_LOGE(TAG, "Postřik s id %d nebyl nalezen.", idStruktury);
+}
+void aktualizujDisplejMnozstvi(double potrebneMnozstviPripravku)
+{
+    ESP_LOGI(TAG, "Aktualizuji displej s potřebným množstvím přípravku: %.2f g", potrebneMnozstviPripravku);
+
+    char mnozstviPripravku[20];
+    sprintf(mnozstviPripravku, "%.2f", potrebneMnozstviPripravku);
+
+    char str[30] = "Mnozstvi: ";
+    strcat(str, mnozstviPripravku);
+
+    // Aktualizace LCD displeje
+    lcd_update(str, 0);
+    lcd_update(" ", 1);
+}
+void cekejNaSpusteniVody()
+{
+    ESP_LOGI(TAG, "Čekám na spuštění vody uživatelem...");
+
+    while (!zahajenoPousteniVodyTlacitkem)
+    {
+        lcd_update("Pustit vodu?", 0);
+        lcd_update("Tlacitko 1", 1);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+
+    ESP_LOGI(TAG, "Spuštění vody potvrzeno uživatelem.");
+}
+void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
+{
+    ESP_LOGI(TAG, "Čekám na potvrzení dokončení míchání...");
+
+    while (!kvitujiFinaleMichani)
+    {
+        lcd_update("Tlacitko 3", 1);
+        lcd_update("Osetri ", 0);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        lcd_update(osetrovanaPlodina, 0);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
+    ESP_LOGI(TAG, "Dokončení míchání potvrzeno.");
+}
+void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
+{
+    ESP_LOGI(TAG, "Aktualizuji den aplikace pro id: %d na %s", idStruktury, denAplikace);
+
+    for (int j = 0; j < pocetPostriku; j++)
+    {
+        if (dataBazePostriku[j].id == idStruktury)
+        {
+            strcpy(dataBazePostriku[j].denPosledniAplikacePostriku, denAplikace);
+            ESP_LOGI(TAG, "Den aplikace aktualizován pro postřik s id: %d", idStruktury);
+            return;
+        }
+    }
+
+    ESP_LOGE(TAG, "Nepodařilo se aktualizovat den aplikace pro id: %d. Postřik nebyl nalezen.", idStruktury);
+}
+
 void michaciProcedura(void *pvParameter)
 {
+    ESP_LOGI(TAG, "Spuštěna míchací procedura TASK.");
+
     while (1)
     {
-        // printf("\nmichaci procedura, zatim nemicham\n");
+        // Kontrola, zda má začít míchání
         if (zacaloMichani)
         {
+            ESP_LOGI(TAG, "Zahájeno míchání.");
+
             double mnozstviPostriku = 0;
             double pomerMichani = 0;
             double potrebneMnozstviPripravku = 0;
             char nazevPripravku[50];
             char osetrovanaPlodina[81];
-            printf("\nmichaci procedura, uz micham1\n");
+
+            // Zajištění exkluzivního přístupu k displeji
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                for (int i = 0; i < pocetPostriku; i++)
-                {
-                    if (dataBazePostriku[i].id == idStruktury)
-                    {
-                        mnozstviPostriku = dataBazePostriku[i].mnozstvi_postriku;
-                        pomerMichani = dataBazePostriku[i].pomer_michani;
-                        strcpy(nazevPripravku, dataBazePostriku[i].nazev_pripravku);
-                        strcpy(osetrovanaPlodina, dataBazePostriku[i].osetrovana_plodina);
-                    }
-                }
+                // Zpracování dat postřiku
+                zpracujPostrikData(idStruktury, &mnozstviPostriku, &pomerMichani, nazevPripravku, osetrovanaPlodina);
+
+                // Výpočet potřebného množství přípravku
                 potrebneMnozstviPripravku = mnozstviPostriku * pomerMichani;
-                printf("\nmichaci procedura, uz micham5\n");
 
-                // displej: potvrd spusteni vody
-                char mnozstviPripravku[20];
-                sprintf(mnozstviPripravku, "%.2f", potrebneMnozstviPripravku);
-                printf("\nmichaci procedura, uz micham6\n");
-                char str[] = "Mnozstvi:";
-                printf("\nmichaci procedura, uz micham6.1\n");
-                strcat(str, mnozstviPripravku);
+                // Aktualizace displeje s potřebným množstvím
+                aktualizujDisplejMnozstvi(potrebneMnozstviPripravku);
 
-                // char ch = 'g';
-                // strcat(str, &ch);
-
-                printf("\nmichaci procedura, uz micham7\n");
-
-                lcd_update(str, 0);
-                lcd_update(" ", 1);
+                // Uvolnění semaforu displeje
                 xSemaphoreGive(Displej);
-                printf("\nmichaci procedura, uz micham8\n");
             }
-            ESP_LOGE(TAG, "ve fci michiciprocedura Chci %f g\n", potrebneMnozstviPripravku);
 
+            ESP_LOGI(TAG, "Požadované množství přípravku: %.2f g", potrebneMnozstviPripravku);
+
+            // Zavolání funkce na zvážení potřebného množství přípravku
             zvazPripravek(potrebneMnozstviPripravku);
+
+            // Zajištění exkluzivního přístupu k displeji
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
+                // Čekání na spuštění vody uživatelem
+                cekejNaSpusteniVody();
 
-                while (!zahajenoPousteniVodyTlacitkem)
-                {
-                    lcd_update("Pustit vodu?", 0);
-                    lcd_update("Tlacitko 1", 1);
-                    vTaskDelay(100 / portTICK_PERIOD_MS);
-                }
                 if (zahajenoPousteniVodyTlacitkem)
                 {
-                    napustVodu(1.4);
-                }
-                while (!kvitujiFinaleMichani)
-                {
-                    lcd_update("Tlacitko 3", 1);
-                    lcd_update("Osetri ", 0);
-                    vTaskDelay(1000 / portTICK_PERIOD_MS);
-                    lcd_update(osetrovanaPlodina, 0);
-                    vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    ESP_LOGI(TAG, "Spouštím napouštění vody.");
+                    napustVodu(1.4); // Spuštění napouštění vody s daným množstvím
                 }
 
+                // Čekání na potvrzení dokončení míchání uživatelem
+                cekejNaFinalizaciMichani(osetrovanaPlodina);
+
+                // Aktualizace dne poslední aplikace postřiku
                 char denAplikace[6];
                 print_current_date(denAplikace, sizeof(denAplikace));
-                for (int j = 0; j < pocetPostriku; j++)
-                {
-                    if (dataBazePostriku[j].id == idStruktury)
-                    {
-                        strcpy(dataBazePostriku[j].denPosledniAplikacePostriku, denAplikace);
-                    }
-                }
+                aktualizujDenAplikace(idStruktury, denAplikace);
+
+                // Uložení aktualizovaných dat postřiku do úložiště
                 ulozPostrikData();
+
+                // Resetování stavových proměnných
                 kvitujiFinaleMichani = false;
                 zacaloMichani = false;
+
+                // Uvolnění semaforu displeje
                 xSemaphoreGive(Displej);
             }
         }
+
+        // Malá prodleva pro uvolnění CPU
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
@@ -1206,28 +1278,30 @@ void mujTaskNaJadreJedna(void *pvParameter)
 {
     nactiPostrikData();
     vTaskDelay(10 / portTICK_PERIOD_MS);
-
     while (1)
     {
-
         if (!mamNecoKmichani())
         {
-
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                // printf("\njsem v semaforu jadro 1\n");
-                //  Example usage
                 lcd_update(" CVUT FEL", 0);
                 lcd_update(" PETR KUCERA", 1);
                 xSemaphoreGive(Displej);
             }
         }
-        for (int i = 0; i < pocetPostriku; i++)
+        else if (!zacaloMichani) // Tato podmínka nyní kontroluje, zda je třeba míchat a zda míchání ještě nezačalo
         {
-
-            if (mamNecoKmichani() && !zacaloMichani)
+            if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-
+                lcd_update("Chces michat?", 0);
+                lcd_update("Tlacitko 2", 1);
+                xSemaphoreGive(Displej);
+            }
+        }
+        if (mamNecoKmichani() && !zacaloMichani) // Nyní můžeme procházet postřiky pouze v případě, že je míchání potřeba
+        {
+            for (int i = 0; i < pocetPostriku; i++)
+            {
                 if (xSemaphoreTake(Displej, portMAX_DELAY))
                 {
                     lcd_update("Chces michat?", 0);
@@ -1235,11 +1309,8 @@ void mujTaskNaJadreJedna(void *pvParameter)
                     xSemaphoreGive(Displej);
                 }
             }
-            else
-            {
-            }
         }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Malá prodleva pro uvolnění CPU
     }
 }
 
