@@ -1,16 +1,40 @@
 #include "main.h"
-// void tare();
-// #include "hx711.h"
 
-// void test(int vaha);
-void ulozPostrikData();
-bool lcd_update(const char *text, int line);
-PostrikData postrik_data = {.id = 0, .mnozstvi_postriku = 0.0, .pomer_michani = 0.0, .denPosledniAplikacePostriku = "02-02"};
-PostrikData dataBazePostriku[MAX_RUZNYCH_POSTRIKU];
-SemaphoreHandle_t Displej;
-SemaphoreHandle_t Tlacitko1;
-SemaphoreHandle_t Tlacitko2;
-SemaphoreHandle_t Tlacitko3;
+void isrOk(void *par)
+{
+    gpio_set_level(ledka, 1);
+    zahajenoPousteniVodyTlacitkem = true;
+}
+void isrCancel(void *par)
+{
+    gpio_set_level(ledka, 0);
+    zacaloMichani = true;
+}
+void isrAux(void *par)
+{
+    kvitujiFinaleMichani = true;
+}
+void configure_interrupt1()
+{
+    gpio_set_direction(tlacitko1, GPIO_MODE_INPUT);
+    gpio_set_intr_type(tlacitko1, GPIO_INTR_POSEDGE);
+    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    gpio_isr_handler_add(tlacitko1, isrOk, NULL);
+}
+void configure_interrupt2()
+{
+    gpio_set_direction(tlacitko2, GPIO_MODE_INPUT);
+    gpio_set_intr_type(tlacitko2, GPIO_INTR_POSEDGE);
+    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    gpio_isr_handler_add(tlacitko2, isrCancel, NULL);
+}
+void configure_interrupt3()
+{
+    gpio_set_direction(tlacitko3, GPIO_MODE_INPUT);
+    gpio_set_intr_type(tlacitko3, GPIO_INTR_POSEDGE);
+    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    gpio_isr_handler_add(tlacitko3, isrAux, NULL);
+}
 
 int delete_postrik(int id)
 {
@@ -45,18 +69,25 @@ int delete_postrik(int id)
     // Vrátit 1 pro označení úspěchu
     return 1;
 }
-void prevodDatumu(char *datum)
+bool extract_id_from_json(cJSON *json, int *id)
 {
-    // 2024-08-05
-    // 05-08
-    char datumKuprave[6];
-    datumKuprave[0] = datum[8];
-    datumKuprave[1] = datum[9];
-    datumKuprave[2] = '-';
-    datumKuprave[3] = datum[5];
-    datumKuprave[4] = datum[6];
-    datumKuprave[5] = '\0';
-    strcpy(datum, datumKuprave);
+    cJSON *id_item = cJSON_GetObjectItem(json, "id");
+
+    if (id_item == NULL)
+    {
+        ESP_LOGE(TAG4, "Položka 'id' nebyla nalezena v JSON objektu");
+        return false;
+    }
+
+    if (!cJSON_IsNumber(id_item))
+    {
+        ESP_LOGE(TAG4, "Položka 'id' není typu číslo");
+        return false;
+    }
+
+    *id = id_item->valueint;
+    ESP_LOGI(TAG4, "Úspěšně načteno id: %d", *id);
+    return true;
 }
 int generate_id()
 {
@@ -75,48 +106,77 @@ int generate_id()
     // Vracíme nově generované ID, které je nejvyšší existující ID + 1
     return max;
 }
-void ulozPostrikData()
+bool lcd_update(const char *text, int line)
 {
-    FILE *soubor = fopen(FILE_PATH4, "wb");
-    if (soubor == NULL)
+    int offset = line * 16;
+    char retezec[17];
+
+    // Check if the text is already displayed
+    if (strncmp(&lcd_buffer[offset], text, 16) == 0)
     {
-        perror("Chyba při otevírání souboru");
-        return;
+        // ESP_LOGI(TAG, "Text is already displayed on line %d: %s", line, text);
+        return false;
     }
 
-    // Uloží počet záznamů
-    fwrite(&pocetPostriku, sizeof(int), 1, soubor);
+    // ESP_LOGI(TAG, "Updating line %d with new text: %s", line, text);
 
-    // Uloží data
-    fwrite(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
+    // Clear the line before writing new text
+    lcd1602_set_cursor(line, 0); // Set cursor to the beginning of the line
+    // ESP_LOGI(TAG, "Clearing line %d", line);
+    lcd1602_write("                "); // Clear the line with spaces
 
-    fclose(soubor);
-}
-void pridatPostrik(PostrikData novyPostrik)
-{
-    if (pocetPostriku < MAX_RUZNYCH_POSTRIKU)
+    // Write new text to the display
+    lcd1602_set_cursor(line, 0);                    // Set cursor to the beginning of the line again
+    snprintf(retezec, sizeof(retezec), "%s", text); // Copy the text to a temporary buffer
+    // ESP_LOGI(TAG, "Writing new text to line %d: %s", line, retezec);
+    lcd1602_write(retezec);
+
+    // Update buffer
+    strncpy(&lcd_buffer[offset], text, 16);
+
+    // Null-terminate the rest of the buffer if the text is shorter than 16 characters
+    for (int i = strlen(text); i < 16; i++)
     {
-        novyPostrik.id = generate_id();
-        dataBazePostriku[pocetPostriku] = novyPostrik;
-        pocetPostriku++;
-        ulozPostrikData(); // do spiffs/poleStruktur
+        lcd_buffer[offset + i] = '\0';
     }
-}
- void seradDatabaziPodleData()
- {
-    printf("datum postriku v serad databazi:%s\n", dataBazePostriku[0].doba_postriku);
-//     for (int i = 0; i < pocetPostriku - 1; i++)
-//     {
-//         for (int j = 1; j < pocetPostriku; j++)
-//         {
-//             //dd.mm
-//             if (dataBazePostriku[i].doba_postriku[4] > dataBazePostriku[j].doba_postriku[4])
-//             {
 
-//             }
-//         }
-//     }
- }
+    // ESP_LOGI(TAG, "Buffer updated for line %d: %s", line, &lcd_buffer[offset]);
+
+    return true;
+}
+bool mamNecoKmichani(void)
+{
+    char datumTed[64];
+    char datumPostriku[11];
+    char denAplikace[64];
+
+    // Get the current date
+    print_current_date(datumTed, sizeof(datumTed));
+
+    for (int i = 0; i < pocetPostriku; i++)
+    {
+        // Copy data from the spray database
+        strcpy(datumPostriku, dataBazePostriku[i].doba_postriku);
+        strcpy(denAplikace, dataBazePostriku[i].denPosledniAplikacePostriku);
+
+        // Assuming prevodDatumu converts the date to a specific format
+        prevodDatumu(datumPostriku);
+
+        // Log the current state of the variables
+        // printf("Kontrola postřiku %d:\n", i + 1);
+        // printf(" - Datum postřiku: %s\n", datumPostriku);
+        // printf(" - Den poslední aplikace: %s\n", denAplikace);
+
+        // Condition to check if the spray needs mixing
+        if ((strcmp(datumTed, datumPostriku) == 0) && (strcmp(datumTed, denAplikace) != 0))
+        {
+            idStruktury = dataBazePostriku[i].id;
+            return true;
+        }
+    }
+    // printf("Žádný postřik k míchání nenalezen.\n");
+    return false;
+}
 void nactiPostrikData()
 {
     FILE *soubor = fopen(FILE_PATH4, "rb");
@@ -131,33 +191,17 @@ void nactiPostrikData()
     fclose(soubor);
     seradDatabaziPodleData();
 }
-int porovnejPostrikData(PostrikData *a, PostrikData *b)
+void napustVodu(double litru)
 {
-    if (strcmp(a->nazev_pripravku, b->nazev_pripravku) != 0)
+    for (int i = 0; i < 30; i++)
     {
-        return 0;
+        printf("\nNapoustim vodu:%d\n", i);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
-    if (strcmp(a->osetrovana_plodina, b->osetrovana_plodina) != 0)
-    {
-        return 0;
-    }
-    if (a->mnozstvi_postriku != b->mnozstvi_postriku)
-    {
-        return 0;
-    }
-    if (a->pomer_michani != b->pomer_michani)
-    {
-        return 0;
-    }
-    if (strcmp(a->doba_postriku, b->doba_postriku) != 0)
-    {
-        return 0;
-    }
-    return 1; // Struktury jsou stejné
+    zahajenoPousteniVodyTlacitkem = false;
 }
 void parse_json_for_id(const char *json_str, PostrikData *data)
 {
-    // Načtení JSON řetězce do cJSON struktury
     cJSON *json = cJSON_Parse(json_str);
     if (json == NULL)
     {
@@ -165,26 +209,11 @@ void parse_json_for_id(const char *json_str, PostrikData *data)
         return;
     }
 
-    // Získání položky 'id' z JSON objektu
-    cJSON *id = cJSON_GetObjectItem(json, "id");
-
-    // Kontrola, zda byla položka 'id' nalezena a je typu číslo
-    if (id == NULL)
+    if (!extract_id_from_json(json, &data->id))
     {
-        ESP_LOGE(TAG4, "Položka 'id' nebyla nalezena v JSON objektu");
-    }
-    else if (cJSON_IsNumber(id))
-    {
-        // Uložení hodnoty id do struktury PostrikData
-        data->id = id->valueint;
-        ESP_LOGI(TAG4, "Úspěšně načteno id: %d", data->id);
-    }
-    else
-    {
-        ESP_LOGE(TAG4, "Položka 'id' není typu číslo");
+        ESP_LOGE(TAG4, "Nepodařilo se získat platné ID z JSON");
     }
 
-    // Uvolnění cJSON struktury po dokončení
     cJSON_Delete(json);
 }
 void parse_json(const char *json_str, PostrikData *data)
@@ -262,14 +291,128 @@ void parse_json(const char *json_str, PostrikData *data)
     // Uvolnění cJSON struktury
     cJSON_Delete(json);
 }
-void napustVodu(double litru)
+int porovnejPostrikData(PostrikData *a, PostrikData *b)
 {
-    for (int i = 0; i < 30; i++)
+    if (strcmp(a->nazev_pripravku, b->nazev_pripravku) != 0)
     {
-        printf("\nNapoustim vodu:%d\n", i);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        return 0;
     }
-    zahajenoPousteniVodyTlacitkem = false;
+    if (strcmp(a->osetrovana_plodina, b->osetrovana_plodina) != 0)
+    {
+        return 0;
+    }
+    if (a->mnozstvi_postriku != b->mnozstvi_postriku)
+    {
+        return 0;
+    }
+    if (a->pomer_michani != b->pomer_michani)
+    {
+        return 0;
+    }
+    if (strcmp(a->doba_postriku, b->doba_postriku) != 0)
+    {
+        return 0;
+    }
+    return 1; // Struktury jsou stejné
+}
+void prevodDatumu(char *datum)
+{
+    // 2024-08-05
+    // 05-08
+    char datumKuprave[6];
+    datumKuprave[0] = datum[8];
+    datumKuprave[1] = datum[9];
+    datumKuprave[2] = '-';
+    datumKuprave[3] = datum[5];
+    datumKuprave[4] = datum[6];
+    datumKuprave[5] = '\0';
+    strcpy(datum, datumKuprave);
+}
+void pridatPostrik(PostrikData novyPostrik)
+{
+    if (pocetPostriku < MAX_RUZNYCH_POSTRIKU)
+    {
+        novyPostrik.id = generate_id();
+        dataBazePostriku[pocetPostriku] = novyPostrik;
+        pocetPostriku++;
+        ulozPostrikData(); // do spiffs/poleStruktur
+    }
+}
+void print_current_date(char *buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    strftime(buffer, buffer_size, "%d-%m", &timeinfo);
+}
+void print_current_time(char *buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    strftime(buffer, buffer_size, "%H:%M:%S", &timeinfo);
+}
+void seradDatabaziPodleData()
+{
+    printf("datum postriku v serad databazi:%s\n", dataBazePostriku[0].doba_postriku);
+    //     for (int i = 0; i < pocetPostriku - 1; i++)
+    //     {
+    //         for (int j = 1; j < pocetPostriku; j++)
+    //         {
+    //             //dd.mm
+    //             if (dataBazePostriku[i].doba_postriku[4] > dataBazePostriku[j].doba_postriku[4])
+    //             {
+
+    //             }
+    //         }
+    //     }
+}
+void ulozPostrikData()
+{
+    FILE *soubor = fopen(FILE_PATH4, "wb");
+    if (soubor == NULL)
+    {
+        perror("Chyba při otevírání souboru");
+        return;
+    }
+
+    // Uloží počet záznamů
+    fwrite(&pocetPostriku, sizeof(int), 1, soubor);
+
+    // Uloží data
+    fwrite(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
+
+    fclose(soubor);
+}
+void tare()
+{
+    hx711_t dev = {
+        .dout = 19,
+        .pd_sck = 18,
+        .gain = HX711_GAIN_A_128};
+
+    ESP_ERROR_CHECK(hx711_init(&dev));
+
+    esp_err_t r = hx711_wait(&dev, 800); // 200
+    if (r != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Device not found... tarefce: %d (%s)\n", r, esp_err_to_name(r));
+    }
+    int32_t data = 0;
+    r = hx711_read_median(&dev, 20, &data); // musi byt sude
+    if (r != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Could not read data... tarefce: %d (%s)\n", r, esp_err_to_name(r));
+    }
+    ofsetek1 = data;
+    chciTarovat = false;
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
 void zvazPripravek(double gramu)
 {
@@ -334,6 +477,7 @@ void zvazPripravek(double gramu)
     }
     ESP_LOGI(TAG, "Weighing process completed");
 }
+
 esp_err_t uvodniStranaKsicht_handler(httpd_req_t *req)
 {
     FILE *file = fopen(FILE_PATH, "r");
@@ -471,7 +615,6 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
 
     return ESP_OK;
 }
-
 esp_err_t vkladaniDatKsicht_handler(httpd_req_t *req)
 {
 
@@ -566,14 +709,10 @@ esp_err_t ulozDataZFormulare_handler(httpd_req_t *req)
             }
         }
     }
-    printf("id struktury2 = :%d\n", idStruktury2);
-    printf("jsoudvastejny = :%d\n", jsouDvaStejny);
-    printf("pocet postriku = :%d\n", pocetPostriku);
     if (idStruktury2 != 0 && pocetPostriku > 1 && !uzJevDatabazi)
     {
         delete_postrik(idStruktury2);
     }
-
     idStruktury2 = 0;
     // Odpověď na POST požadavek
     const char resp[] = "{\"status\":\"success\"}";
@@ -648,7 +787,6 @@ esp_err_t zmenaDatVDatabaziId_handler(httpd_req_t *req)
 
     return ESP_OK;
 }
-
 esp_err_t zmenDataVDatabaziPredvyplneni_handler(httpd_req_t *req)
 {
     // Buffer pro dočasné uchování JSON dat
@@ -733,7 +871,6 @@ esp_err_t zmenDataVDatabaziPredvyplneni_handler(httpd_req_t *req)
 
     return ESP_OK;
 }
-
 esp_err_t smazaniPostriku_handler(httpd_req_t *req)
 {
     // Buffer pro příjem dat
@@ -789,31 +926,26 @@ esp_err_t smazaniPostriku_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// tabulka s prehledem vsech postriku a jejich dat
 httpd_uri_t uri_uvodniStranaKsicht = {
     .uri = "/",
     .method = HTTP_GET,
     .handler = uvodniStranaKsicht_handler,
     .user_ctx = NULL};
-// tabulka na hlavni strance si zada vypis vsech hodnot vsech postriku
 httpd_uri_t uri_nahlasPostriky = {
     .uri = "/postriky",
     .method = HTTP_GET,
     .handler = nahlasPostriky_handler,
     .user_ctx = NULL};
-// formular pro vkladani ci upravu dat
 httpd_uri_t uri_vkladaniDatKsicht = {
     .uri = "/vkladaniDat",
     .method = HTTP_GET,
     .handler = vkladaniDatKsicht_handler,
     .user_ctx = NULL};
-// prijme json z formulare vkladaniDat a ulozi data do databazepostriku
 httpd_uri_t uri_ulozDataZFormulare = {
     .uri = "/ulozit",
     .method = HTTP_POST,
     .handler = ulozDataZFormulare_handler,
     .user_ctx = NULL};
-// zmena dat urciteho postriku. stejne okno jako /vkladanidat ale predvyplnene
 httpd_uri_t uri_zmenDataVDatabaziKsicht = {
     .uri = "/zmenit",
     .method = HTTP_GET,
@@ -829,86 +961,12 @@ httpd_uri_t uri_zmenDataVDatabaziPredvyplneni = {
     .method = HTTP_GET,
     .handler = zmenDataVDatabaziPredvyplneni_handler,
     .user_ctx = NULL};
-// smazani zaznamu z databaze
 httpd_uri_t uri_delete_postrik = {
     .uri = "/smazat",
     .method = HTTP_DELETE,
     .handler = smazaniPostriku_handler,
     .user_ctx = NULL};
 
-void init_spiffs(void)
-{
-    esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
-        .partition_label = NULL,
-        .max_files = 5,
-        .format_if_mount_failed = true};
-
-    // Inicializace SPIFFS
-    esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
-    if (ret != ESP_OK)
-    {
-        if (ret == ESP_FAIL)
-        {
-            ESP_LOGE("SPIFFS", "Failed to mount or format filesystem");
-        }
-        else if (ret == ESP_ERR_NOT_FOUND)
-        {
-            ESP_LOGE("SPIFFS", "Failed to find SPIFFS partition");
-        }
-        else
-        {
-            ESP_LOGE("SPIFFS", "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
-        }
-        return;
-    }
-
-    size_t total = 0, used = 0;
-    ret = esp_spiffs_info(NULL, &total, &used);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE("SPIFFS", "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
-    }
-    else
-    {
-        ESP_LOGI("SPIFFS", "Partition size: total: %d, used: %d", total, used);
-    }
-}
-static httpd_handle_t start_webserver(void)
-{
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    httpd_handle_t server = NULL;
-    if (httpd_start(&server, &config) == ESP_OK)
-    {
-        httpd_register_uri_handler(server, &uri_delete_postrik);
-        httpd_register_uri_handler(server, &uri_uvodniStranaKsicht);
-        httpd_register_uri_handler(server, &uri_vkladaniDatKsicht);
-        httpd_register_uri_handler(server, &uri_ulozDataZFormulare);
-        httpd_register_uri_handler(server, &uri_nahlasPostriky);
-        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziKsicht);
-        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziId);
-        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziPredvyplneni);
-    }
-    return server;
-}
-static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
-{
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
-    {
-        esp_wifi_connect();
-    }
-    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
-    {
-        esp_wifi_connect();
-        ESP_LOGI(TAG, "retry to connect to the AP");
-    }
-    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
-    {
-        // ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        // ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
-    }
-}
 void wifi_init_sta(void)
 {
     esp_netif_init();
@@ -947,25 +1005,62 @@ void wifi_init_sta(void)
     ESP_LOGI(TAG, "connect to ap SSID:%s password:%s",
              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
 }
-void print_current_date(char *buffer, size_t buffer_size)
+static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    time_t now;
-    struct tm timeinfo;
-
-    time(&now);
-    localtime_r(&now, &timeinfo);
-
-    strftime(buffer, buffer_size, "%d-%m", &timeinfo);
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
+    {
+        esp_wifi_connect();
+    }
+    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
+    {
+        esp_wifi_connect();
+        ESP_LOGI(TAG, "retry to connect to the AP");
+    }
+    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
+    {
+        // ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        // ESP_LOGI(TAG, "got ip:%s", ip4addr_ntoa(&event->ip_info.ip));
+    }
 }
-void print_current_time(char *buffer, size_t buffer_size)
+void init_spiffs(void)
 {
-    time_t now;
-    struct tm timeinfo;
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/spiffs",
+        .partition_label = NULL,
+        .max_files = 5,
+        .format_if_mount_failed = true};
 
-    time(&now);
-    localtime_r(&now, &timeinfo);
+    // Inicializace SPIFFS
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
 
-    strftime(buffer, buffer_size, "%H:%M:%S", &timeinfo);
+    if (ret != ESP_OK)
+    {
+        if (ret == ESP_FAIL)
+        {
+            ESP_LOGE("SPIFFS", "Failed to mount or format filesystem");
+        }
+        else if (ret == ESP_ERR_NOT_FOUND)
+        {
+            ESP_LOGE("SPIFFS", "Failed to find SPIFFS partition");
+        }
+        else
+        {
+            ESP_LOGE("SPIFFS", "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info(NULL, &total, &used);
+    if (ret != ESP_OK)
+
+    {
+        ESP_LOGE("SPIFFS", "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
+    }
+    else
+    {
+        ESP_LOGI("SPIFFS", "Partition size: total: %d, used: %d", total, used);
+    }
 }
 void initialize_sntp(void)
 {
@@ -1000,106 +1095,24 @@ void obtain_time(void)
         ESP_LOGI(TAG5, "Time synchronized successfully");
     }
 }
-void isrOk(void *par)
+static httpd_handle_t start_webserver(void)
 {
-    gpio_set_level(ledka, 1);
-    zahajenoPousteniVodyTlacitkem = true;
-}
-void isrCancel(void *par)
-{
-    gpio_set_level(ledka, 0);
-    zacaloMichani = true;
-}
-void isrAux(void *par)
-{
-    kvitujiFinaleMichani = true;
-}
-void configure_interrupt1()
-{
-    gpio_set_direction(tlacitko1, GPIO_MODE_INPUT);
-    gpio_set_intr_type(tlacitko1, GPIO_INTR_POSEDGE);
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    gpio_isr_handler_add(tlacitko1, isrOk, NULL);
-}
-void configure_interrupt2()
-{
-    gpio_set_direction(tlacitko2, GPIO_MODE_INPUT);
-    gpio_set_intr_type(tlacitko2, GPIO_INTR_POSEDGE);
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    gpio_isr_handler_add(tlacitko2, isrCancel, NULL);
-}
-void configure_interrupt3()
-{
-    gpio_set_direction(tlacitko3, GPIO_MODE_INPUT);
-    gpio_set_intr_type(tlacitko3, GPIO_INTR_POSEDGE);
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    gpio_isr_handler_add(tlacitko3, isrAux, NULL);
-}
-bool lcd_update(const char *text, int line)
-{
-    int offset = line * 16;
-    char retezec[17];
-
-    // Check if the text is already displayed
-    if (strncmp(&lcd_buffer[offset], text, 16) == 0)
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    httpd_handle_t server = NULL;
+    if (httpd_start(&server, &config) == ESP_OK)
     {
-        // ESP_LOGI(TAG, "Text is already displayed on line %d: %s", line, text);
-        return false;
+        httpd_register_uri_handler(server, &uri_delete_postrik);
+        httpd_register_uri_handler(server, &uri_uvodniStranaKsicht);
+        httpd_register_uri_handler(server, &uri_vkladaniDatKsicht);
+        httpd_register_uri_handler(server, &uri_ulozDataZFormulare);
+        httpd_register_uri_handler(server, &uri_nahlasPostriky);
+        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziKsicht);
+        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziId);
+        httpd_register_uri_handler(server, &uri_zmenDataVDatabaziPredvyplneni);
     }
-
-    // ESP_LOGI(TAG, "Updating line %d with new text: %s", line, text);
-
-    // Clear the line before writing new text
-    lcd1602_set_cursor(line, 0); // Set cursor to the beginning of the line
-    // ESP_LOGI(TAG, "Clearing line %d", line);
-    lcd1602_write("                "); // Clear the line with spaces
-
-    // Write new text to the display
-    lcd1602_set_cursor(line, 0);                    // Set cursor to the beginning of the line again
-    snprintf(retezec, sizeof(retezec), "%s", text); // Copy the text to a temporary buffer
-    // ESP_LOGI(TAG, "Writing new text to line %d: %s", line, retezec);
-    lcd1602_write(retezec);
-
-    // Update buffer
-    strncpy(&lcd_buffer[offset], text, 16);
-
-    // Null-terminate the rest of the buffer if the text is shorter than 16 characters
-    for (int i = strlen(text); i < 16; i++)
-    {
-        lcd_buffer[offset + i] = '\0';
-    }
-
-    // ESP_LOGI(TAG, "Buffer updated for line %d: %s", line, &lcd_buffer[offset]);
-
-    return true;
+    return server;
 }
 
-void tare()
-{
-    hx711_t dev = {
-        .dout = 19,
-        .pd_sck = 18,
-        .gain = HX711_GAIN_A_128};
-
-    ESP_ERROR_CHECK(hx711_init(&dev));
-
-    esp_err_t r = hx711_wait(&dev, 800); // 200
-    if (r != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Device not found... tarefce: %d (%s)\n", r, esp_err_to_name(r));
-    }
-    int32_t data = 0;
-    r = hx711_read_median(&dev, 20, &data); // musi byt sude
-    if (r != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Could not read data... tarefce: %d (%s)\n", r, esp_err_to_name(r));
-    }
-    ofsetek1 = data;
-    chciTarovat = false;
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-}
-
-// task na jadre 1
 void michaciProcedura(void *pvParameter)
 {
     while (1)
@@ -1115,14 +1128,10 @@ void michaciProcedura(void *pvParameter)
             printf("\nmichaci procedura, uz micham1\n");
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                printf("\nmichaci procedura, uz micham2\n");
-
                 for (int i = 0; i < pocetPostriku; i++)
                 {
-                    printf("\nmichaci procedura, uz micham3\n");
                     if (dataBazePostriku[i].id == idStruktury)
                     {
-                        printf("\nmichaci procedura, uz micham4\n");
                         mnozstviPostriku = dataBazePostriku[i].mnozstvi_postriku;
                         pomerMichani = dataBazePostriku[i].pomer_michani;
                         strcpy(nazevPripravku, dataBazePostriku[i].nazev_pripravku);
@@ -1192,40 +1201,6 @@ void michaciProcedura(void *pvParameter)
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
-}
-
-bool mamNecoKmichani(void)
-{
-    char datumTed[64];
-    char datumPostriku[11];
-    char denAplikace[64];
-
-    // Get the current date
-    print_current_date(datumTed, sizeof(datumTed));
-
-    for (int i = 0; i < pocetPostriku; i++)
-    {
-        // Copy data from the spray database
-        strcpy(datumPostriku, dataBazePostriku[i].doba_postriku);
-        strcpy(denAplikace, dataBazePostriku[i].denPosledniAplikacePostriku);
-
-        // Assuming prevodDatumu converts the date to a specific format
-        prevodDatumu(datumPostriku);
-
-        // Log the current state of the variables
-        // printf("Kontrola postřiku %d:\n", i + 1);
-        // printf(" - Datum postřiku: %s\n", datumPostriku);
-        // printf(" - Den poslední aplikace: %s\n", denAplikace);
-
-        // Condition to check if the spray needs mixing
-        if ((strcmp(datumTed, datumPostriku) == 0) && (strcmp(datumTed, denAplikace) != 0))
-        {
-            idStruktury = dataBazePostriku[i].id;
-            return true;
-        }
-    }
-    // printf("Žádný postřik k míchání nenalezen.\n");
-    return false;
 }
 void mujTaskNaJadreJedna(void *pvParameter)
 {
@@ -1308,9 +1283,6 @@ void app_main(void)
     init_spiffs();
     start_webserver();
     lcd1602_init(RS, EN, D4, D5, D6, D7);
-    // lcd1602_shift_left();
-    //  gpio_set_direction(relePin, GPIO_MODE_OUTPUT);
-    //  gpio_set_level(relePin, 0);
     gpio_set_direction(ledka, GPIO_MODE_OUTPUT);
     configure_interrupt1();
     configure_interrupt2();
