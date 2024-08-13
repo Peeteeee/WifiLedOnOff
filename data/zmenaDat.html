@@ -121,10 +121,15 @@
           .then((data) => {
             console.log(data); // Zde máte přístup k načteným datům
             const prvniObjekt = data[0];
-            // Přístup k hodnotě 'nazev'
+            const rok = 2024;
+            const dobaZdat = prvniObjekt.doba;
+            console.log("Doba z dat:", dobaZdat);
+            // mam: dd-mm     chci: yyyy-mm-dd
+            var datearray = dobaZdat.split("-");
+            var newdate = rok + "-" + datearray[1] + "-" + datearray[0];
+            console.log("Upravena doba:", newdate);
 
-            // Přístup k jednotlivým hodnotám
-            const doba = prvniObjekt.doba;
+            const doba = newdate;
             const mnozstvi = prvniObjekt.mnozstvi;
             const nazev = prvniObjekt.nazev;
             const plodina = prvniObjekt.plodina;
