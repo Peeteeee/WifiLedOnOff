@@ -10,6 +10,7 @@
 #include "esp_sntp.h"
 #include "esp_spiffs.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_vfs.h"
 #include "esp_vfs_fat.h"
 #include "esp_wifi.h"
@@ -86,21 +87,22 @@ static const char *TAG12 = "seradDatabaziPodleData";
 static const char *TAG13 = "smazaniPostriku_handler";
 static const char *TAG14 = "zmenaDatVDatabaziId_handler";
 static const char *TAG15 = "extract_id_from_json";
-static const char *TAG16 = "aktualizujDisplejMnozstvi";
+//static const char *TAG16 = "";
 static const char *TAG17 = "aktualizujDenAplikace";
 static const char *TAG18 = "delete_postrik";
 static const char *TAG19 = "generate_id";
-static const char *TAG20 = "mamNecoKmichani";
+//static const char *TAG20 = "mamNecoKmichani";
 static const char *TAG21 = "pridatPostrik";
 static const char *TAG22 = "zpracujPostrikData";
 static const char *TAG23 = "nahlasPostriky_handler";
 static const char *TAG24 = "cekejNaFinalizaciMichani";
 static const char *TAG25 = "jePostrikVdatabazi";
-bool zacaloMichani = false;
+bool probihaMichani = false;
 bool zahajenoPousteniVodyTlacitkem = false;
 bool kvitujiFinaleMichani = false;
 bool chciTarovat = false;
-
+bool uzJevDatabazi = false;
+bool mamNecoKmichanipromenna = false;
 void isrOk(void *par);
 void isrCancel(void *par);
 void isrAux(void *par);
@@ -116,13 +118,14 @@ void obtain_time(void);
 static httpd_handle_t start_webserver(void);
 
 void aktualizujDenAplikace(int idStruktury, const char *denAplikace);
-void aktualizujDisplejMnozstvi(double potrebneMnozstviPripravku);
 void cekejNaFinalizaciMichani(char *osetrovanaPlodina);
 void cekejNaSpusteniVody();
 int delete_postrik(int id);
 bool extract_id_from_json(cJSON *json, int *id);
 int generate_id();
-bool jePostrikVdatabazi(PostrikData* postrik_data);
+bool jePostrikVdatabazi(PostrikData *postrik_data);
+void konfiguraceTimeru(void);
+void kontrola_kmichani_cb();
 bool lcd_update(const char *text, int line);
 bool mamNecoKmichani(void);
 void nactiPostrikData();
@@ -138,7 +141,7 @@ void print_current_time(char *buffer, size_t buffer_size);
 void seradDatabaziPodleData();
 void tare();
 void ulozPostrikData();
-void vypisStrukturuDoTerminalu();
+int vratPoradoveCisloStrukturyVpoli(int id);
 void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina);
 void zvazPripravek(double gramu);
 

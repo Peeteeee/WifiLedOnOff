@@ -2,17 +2,34 @@
 
 void isrOk(void *par)
 {
-    gpio_set_level(ledka, 1);
-    zahajenoPousteniVodyTlacitkem = true;
+
+    if (!probihaMichani && !zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
+    {
+        probihaMichani = true;
+    }
+    else if (probihaMichani && !zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
+    {
+        probihaMichani = true;
+        zahajenoPousteniVodyTlacitkem = true;
+    }
+    else if (probihaMichani && zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
+    {
+        probihaMichani = true;
+        zahajenoPousteniVodyTlacitkem = true;
+        kvitujiFinaleMichani = true;
+    }
+    else
+    {
+        printf("\n\n\nprobihaMichani && zahajenoPousteniVodyTlacitkem && kvitujiFinaleMichani = 1,1,1\n\n\n");
+    }
 }
 void isrCancel(void *par)
 {
-    gpio_set_level(ledka, 0);
-    zacaloMichani = true;
+    gpio_set_level(ledka, 1);
 }
 void isrAux(void *par)
 {
-    kvitujiFinaleMichani = true;
+    gpio_set_level(ledka, 0);
 }
 void configure_interrupt1()
 {
@@ -25,14 +42,12 @@ void configure_interrupt2()
 {
     gpio_set_direction(tlacitko2, GPIO_MODE_INPUT);
     gpio_set_intr_type(tlacitko2, GPIO_INTR_POSEDGE);
-    //gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     gpio_isr_handler_add(tlacitko2, isrCancel, NULL);
 }
 void configure_interrupt3()
 {
     gpio_set_direction(tlacitko3, GPIO_MODE_INPUT);
     gpio_set_intr_type(tlacitko3, GPIO_INTR_POSEDGE);
-    //gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     gpio_isr_handler_add(tlacitko3, isrAux, NULL);
 }
 
@@ -52,34 +67,16 @@ void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
 
     ESP_LOGE(TAG, "Nepodařilo se aktualizovat den aplikace pro id: %d. Postřik nebyl nalezen.", idStruktury);
 }
-void aktualizujDisplejMnozstvi(double potrebneMnozstviPripravku)
-{
-    ESP_LOGI(TAG, "Aktualizuji displej s potřebným množstvím přípravku: %.2f g", potrebneMnozstviPripravku);
-
-    char mnozstviPripravku[20];
-    sprintf(mnozstviPripravku, "%.2f", potrebneMnozstviPripravku);
-
-    char str[30] = "Mnozstvi: ";
-    strcat(str, mnozstviPripravku);
-
-    // Aktualizace LCD displeje
-    lcd_update(str, 0);
-    lcd_update(" ", 1);
-}
 void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
 {
     ESP_LOGI(TAG, "Čekám na potvrzení dokončení míchání...");
 
     while (!kvitujiFinaleMichani)
     {
-        lcd_update("Tlacitko 3", 1);
-        lcd_update("Osetri ", 0);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        lcd_update(osetrovanaPlodina, 0);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        lcd_update(" Osetri: ", 0);
+        lcd_update(osetrovanaPlodina, 1);
     }
-
-    ESP_LOGI(TAG, "Dokončení míchání potvrzeno.");
+    ESP_LOGI(TAG24, "Dokončení míchání potvrzeno.");
 }
 void cekejNaSpusteniVody()
 {
@@ -87,8 +84,8 @@ void cekejNaSpusteniVody()
 
     while (!zahajenoPousteniVodyTlacitkem)
     {
-        lcd_update("Pustit vodu?", 0);
-        lcd_update("Tlacitko 1", 1);
+        lcd_update("Vysyp pripravek!", 0);
+        lcd_update("Mam pustit vodu?", 1);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 
@@ -111,7 +108,7 @@ int delete_postrik(int id)
             }
             pocetPostriku--;
             ulozPostrikData();
-            ESP_LOGI("DELETE_POSTRIK", "Pocet postriku Delete: %d", pocetPostriku);
+            ESP_LOGI(TAG18, "Pocet postriku Delete: %d", pocetPostriku);
             return 1;
         }
     }
@@ -150,9 +147,47 @@ int generate_id()
             max = dataBazePostriku[i].id + 1;
         }
     }
+    ESP_LOGI(TAG19, "Úspěšně pridano id: %d", max);
 
     // Vracíme nově generované ID, které je nejvyšší existující ID + 1
     return max;
+}
+bool jePostrikVdatabazi(PostrikData *postrik_data)
+{
+    for (int i = 0; i < pocetPostriku; i++)
+    {
+        if (porovnejPostrikData(&dataBazePostriku[pocetPostriku - 1 - i], postrik_data))
+        {
+            uzJevDatabazi = true;
+            return true;
+            ESP_LOGI(TAG25, "Postřik již existuje v databázi.");
+            break; // Pokud je postřik nalezen, nemusíme procházet zbytek databáze
+        }
+    }
+    return false;
+}
+void konfiguraceTimeru(void)
+{
+    // Konfigurace timeru
+    const esp_timer_create_args_t timer_args = {
+        .callback = &kontrola_kmichani_cb, // Callback funkce
+        .name = "kontrola_kmichani_timer"  // Jméno timeru (pro ladění)
+    };
+    esp_timer_handle_t kontrola_kmichani_timer;
+    esp_err_t err = esp_timer_create(&timer_args, &kontrola_kmichani_timer);
+    if (err != ESP_OK)
+    {
+        // Chyba při vytváření timeru
+        printf("Failed to create timer\n");
+        return;
+    }
+    // Spustit timer s periodou 1000 ms (1 sekunda)
+    esp_timer_start_periodic(kontrola_kmichani_timer, 500000); // 1000000 mikrosekund = 1 sekunda
+}
+void kontrola_kmichani_cb(void *arg)
+{
+    // printf("\n\n\nTimer zjistuje hodnotu fce mamNecoKmichani()\n\n\n");
+    mamNecoKmichanipromenna = mamNecoKmichani() ? true : false;
 }
 bool lcd_update(const char *text, int line)
 {
@@ -214,7 +249,7 @@ bool mamNecoKmichani(void)
             return true;
         }
     }
-    // printf("Žádný postřik k míchání nenalezen.\n");
+    // ESP_LOGI(TAG20, "Žádný postřik k míchání nenalezen");
     return false;
 }
 void nactiPostrikData()
@@ -234,12 +269,11 @@ void nactiPostrikData()
 }
 void napustVodu(double litru)
 {
-    for (int i = 0; i < 30; i++)
+    for (int i = 0; i < 5; i++)
     {
         printf("\nNapoustim vodu:%d\n", i);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(400 / portTICK_PERIOD_MS);
     }
-    zahajenoPousteniVodyTlacitkem = false;
 }
 void parse_json_for_id(const char *json_str, PostrikData *data)
 {
@@ -332,6 +366,10 @@ void parse_json(const char *json_str, PostrikData *data)
     // Uvolnění cJSON struktury
     cJSON_Delete(json);
 }
+int porovnejDatumy(const char *datum1, const char *datum2)
+{
+    return 1;
+}
 int porovnejPostrikData(PostrikData *a, PostrikData *b)
 {
     if (strcmp(a->nazev_pripravku, b->nazev_pripravku) != 0)
@@ -380,10 +418,10 @@ void prevodDatumu(char *datum)
 
     // Přepis původního data novým formátem
     strcpy(datum, datumKuprave);
-    //ESP_LOGE(TAG7, "prevod datumu%s", datum);
+    // ESP_LOGE(TAG7, "prevod datumu%s", datum);
 
-     // Logování úspěšné konverze
-     ESP_LOGI(TAG7, "Datum úspěšně převedeno na formát DD-MM: %s", datum);
+    // Logování úspěšné konverze
+    ESP_LOGI(TAG7, "Datum úspěšně převedeno na formát DD-MM: %s", datum);
 }
 void pridatPostrik(PostrikData novyPostrik)
 {
@@ -393,6 +431,7 @@ void pridatPostrik(PostrikData novyPostrik)
         dataBazePostriku[pocetPostriku] = novyPostrik;
         pocetPostriku++;
         ulozPostrikData(); // do spiffs/poleStruktur
+        ESP_LOGI(TAG21, "Pridavam postrik");
     }
 }
 void print_current_date(char *buffer, size_t buffer_size)
@@ -417,24 +456,8 @@ void print_current_time(char *buffer, size_t buffer_size)
 }
 void seradDatabaziPodleData()
 {
+    //porovnejDatumy();
     ESP_LOGE(TAG12, "Radim DB podle data");
-}
-void ulozPostrikData()
-{
-    FILE *soubor = fopen(FILE_PATH4, "wb");
-    if (soubor == NULL)
-    {
-        perror("Chyba při otevírání souboru");
-        return;
-    }
-
-    // Uloží počet záznamů
-    fwrite(&pocetPostriku, sizeof(int), 1, soubor);
-
-    // Uloží data
-    fwrite(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
-
-    fclose(soubor);
 }
 void tare()
 {
@@ -460,31 +483,57 @@ void tare()
     chciTarovat = false;
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
-void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina)
+void ulozPostrikData()
 {
-    ESP_LOGI(TAG, "Zpracovávám data postřiku pro id: %d", idStruktury);
+    FILE *soubor = fopen(FILE_PATH4, "wb");
+    if (soubor == NULL)
+    {
+        perror("Chyba při otevírání souboru");
+        return;
+    }
 
+    // Uloží počet záznamů
+    fwrite(&pocetPostriku, sizeof(int), 1, soubor);
+
+    // Uloží data
+    fwrite(dataBazePostriku, sizeof(PostrikData), pocetPostriku, soubor);
+
+    fclose(soubor);
+}
+int vratPoradoveCisloStrukturyVpoli(int id)
+{
     for (int i = 0; i < pocetPostriku; i++)
     {
         if (dataBazePostriku[i].id == idStruktury)
         {
-            *mnozstviPostriku = dataBazePostriku[i].mnozstvi_postriku;
-            *pomerMichani = dataBazePostriku[i].pomer_michani;
-            strcpy(nazevPripravku, dataBazePostriku[i].nazev_pripravku);
-            strcpy(osetrovanaPlodina, dataBazePostriku[i].osetrovana_plodina);
-
-            ESP_LOGI(TAG, "Načteno: Množství postřiku = %.2f, Poměr míchání = %.2f, Název přípravku = %s, Ošetřovaná plodina = %s",
-                     *mnozstviPostriku, *pomerMichani, nazevPripravku, osetrovanaPlodina);
-            return;
+            return i;
         }
     }
+    return -1;
+}
+void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina)
+{
+    ESP_LOGI(TAG22, "Zpracovávám data postřiku pro id: %d", idStruktury);
 
-    ESP_LOGE(TAG, "Postřik s id %d nebyl nalezen.", idStruktury);
+    int i = vratPoradoveCisloStrukturyVpoli(idStruktury);
+    *mnozstviPostriku = dataBazePostriku[i].mnozstvi_postriku;
+    *pomerMichani = dataBazePostriku[i].pomer_michani;
+    strcpy(nazevPripravku, dataBazePostriku[i].nazev_pripravku);
+    strcpy(osetrovanaPlodina, dataBazePostriku[i].osetrovana_plodina);
+
+    ESP_LOGI(TAG22, "Načteno: Množství postřiku = %.2f, Poměr míchání = %.2f, Název přípravku = %s, Ošetřovaná plodina = %s",
+             *mnozstviPostriku, *pomerMichani, nazevPripravku, osetrovanaPlodina);
+    return;
 }
 void zvazPripravek(double gramu)
 {
-    ESP_LOGI(TAG11, "Starting weighing process for %f grams", gramu); // Log start of function
-    printf("zvaz:gramu:%f\n", gramu);                                 // Console output for debugging
+    if (xSemaphoreTake(Displej, portMAX_DELAY))
+    {
+        lcd_update(" Nuluji cekej!", 0);
+        lcd_update("", 1);
+        xSemaphoreGive(Displej);
+    }
+    ESP_LOGI(TAG11, "Starting weighing process for %f grams", gramu);
 
     // Initialize the HX711 device structure
     hx711_t dev = {
@@ -504,8 +553,6 @@ void zvazPripravek(double gramu)
     {
         // Read median value from HX711
         esp_err_t r = hx711_read_median(&dev, 6, &data);
-        ESP_LOGE(TAG11, "Merim: %ld gramu\n", data);
-        ESP_LOGE(TAG11, "Potrebuji: %f gramu\n", gramu);
         if (r != ESP_OK)
         {
             ESP_LOGE(TAG11, "Could not read data... error: %d (%s)", r, esp_err_to_name(r));
@@ -515,20 +562,20 @@ void zvazPripravek(double gramu)
         // Calculate the actual weight
         double novaData = (double)data - ofsetek1;
         double dataProDisplay = novaData / prevodniFaktorA < 0 ? -novaData / prevodniFaktorA : novaData / prevodniFaktorA;
-        ESP_LOGE(TAG11, "Merim %f g\n", dataProDisplay);
-        ESP_LOGE(TAG11, "Chci %f g\n", gramu);
 
         // Format the weight data as a string
-        char stringKzobrazeni[10];                                                    // Buffer to hold the string representation of the weight
-        snprintf(stringKzobrazeni, sizeof(stringKzobrazeni), "%.2f", dataProDisplay); // Safe string formatting
+        char stringKzobrazeni[81];
+        char stringKzobrazeni2[17];
+        snprintf(stringKzobrazeni, sizeof(stringKzobrazeni), "%s", dataBazePostriku[vratPoradoveCisloStrukturyVpoli(idStruktury)].nazev_pripravku);
+        snprintf(stringKzobrazeni2, sizeof(stringKzobrazeni2), "  %.2f gramu", gramu - dataProDisplay);
 
         // Update the display with the current weight
         if (xSemaphoreTake(Displej, portMAX_DELAY))
         {
-            lcd_update(stringKzobrazeni, 0);
-            lcd_update("Syp, syp.", 1);
+            lcd_update(stringKzobrazeni, 0);  // pripravek
+            lcd_update(stringKzobrazeni2, 1); // zbyvajici hmotnost
             xSemaphoreGive(Displej);
-            ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni);
+            // ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni);
         }
         else
         {
@@ -597,15 +644,15 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
     len = snprintf(chunk, sizeof(chunk), "[");
     if (len < 0)
     {
-        ESP_LOGE("JSON", "Failed to format JSON start bracket.");
+        ESP_LOGE(TAG23, "Failed to format JSON start bracket.");
         return ESP_FAIL;
     }
     if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK)
     {
-        ESP_LOGE("JSON", "Failed to send JSON start bracket chunk.");
+        ESP_LOGE(TAG23, "Failed to send JSON start bracket chunk.");
         return ESP_FAIL;
     }
-    ESP_LOGI("JSON", "Sent JSON start bracket.");
+    ESP_LOGI(TAG23, "Sent JSON start bracket.");
 
     // Iterace přes každý prvek v poli dataBazePostriku
     for (int i = 0; i < pocetPostriku; i++)
@@ -616,15 +663,15 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
             len = snprintf(chunk, sizeof(chunk), ",");
             if (len < 0)
             {
-                ESP_LOGE("JSON", "Failed to format JSON comma.");
+                ESP_LOGE(TAG23, "Failed to format JSON comma.");
                 return ESP_FAIL;
             }
             if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK)
             {
-                ESP_LOGE("JSON", "Failed to send JSON comma chunk.");
+                ESP_LOGE(TAG23, "Failed to send JSON comma chunk.");
                 return ESP_FAIL;
             }
-            ESP_LOGI("JSON", "Sent JSON comma for item %d.", i);
+            ESP_LOGI(TAG23, "Sent JSON comma for item %d.", i);
         }
 
         // Příprava JSON objektu pro aktuální položku
@@ -639,7 +686,7 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
                        dataBazePostriku[i].denPosledniAplikacePostriku);
         if (len < 0)
         {
-            ESP_LOGE("JSON", "Failed to format JSON object for item %d.", i);
+            ESP_LOGE(TAG23, "Failed to format JSON object for item %d.", i);
             return ESP_FAIL;
         }
 
@@ -650,11 +697,11 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
             int chunk_len = (len - offset > CHUNK_SIZE) ? CHUNK_SIZE : (len - offset);
             if (httpd_resp_send_chunk(req, chunk + offset, chunk_len) != ESP_OK)
             {
-                ESP_LOGE("JSON", "Failed to send JSON object chunk for item %d.", i);
+                ESP_LOGE(TAG23, "Failed to send JSON object chunk for item %d.", i);
                 return ESP_FAIL;
             }
             offset += chunk_len;
-            ESP_LOGI("JSON", "Sent %d bytes of JSON object chunk for item %d.", chunk_len, i);
+            ESP_LOGI(TAG23, "Sent %d bytes of JSON object chunk for item %d.", chunk_len, i);
         }
     }
 
@@ -662,23 +709,23 @@ esp_err_t nahlasPostriky_handler(httpd_req_t *req)
     len = snprintf(chunk, sizeof(chunk), "]");
     if (len < 0)
     {
-        ESP_LOGE("JSON", "Failed to format JSON end bracket.");
+        ESP_LOGE(TAG23, "Failed to format JSON end bracket.");
         return ESP_FAIL;
     }
     if (httpd_resp_send_chunk(req, chunk, len) != ESP_OK)
     {
-        ESP_LOGE("JSON", "Failed to send JSON end bracket chunk.");
+        ESP_LOGE(TAG23, "Failed to send JSON end bracket chunk.");
         return ESP_FAIL;
     }
-    ESP_LOGI("JSON", "Sent JSON end bracket.");
+    ESP_LOGI(TAG23, "Sent JSON end bracket.");
 
     // Indikace konce odpovědi (prázdný chunk)
     if (httpd_resp_send_chunk(req, NULL, 0) != ESP_OK)
     {
-        ESP_LOGE("JSON", "Failed to send final empty chunk to indicate end of response.");
+        ESP_LOGE(TAG23, "Failed to send final empty chunk to indicate end of response.");
         return ESP_FAIL;
     }
-    ESP_LOGI("JSON", "Completed sending JSON response.");
+    ESP_LOGI(TAG23, "Completed sending JSON response.");
 
     return ESP_OK;
 }
@@ -749,16 +796,9 @@ esp_err_t ulozDataZFormulare_handler(httpd_req_t *req)
 
     // Volání funkce pro zpracování JSON
     parse_json(buf, &postrik_data);
-    bool uzJevDatabazi = false;
-    for (int i = 0; i < pocetPostriku; i++)
-    {
-        if (porovnejPostrikData(&dataBazePostriku[pocetPostriku - 1 - i], &postrik_data))
-        {
-            uzJevDatabazi = true;
-            ESP_LOGI(TAG6, "Postřik již existuje v databázi.");
-            break; // Pokud je postřik nalezen, nemusíme procházet zbytek databáze
-        }
-    }
+
+    jePostrikVdatabazi(&postrik_data);
+
     // Pokud postřik neexistuje v databázi, přidej ho
     if (!uzJevDatabazi)
     {
@@ -1183,109 +1223,70 @@ void michaciProcedura(void *pvParameter)
     while (1)
     {
         // Kontrola, zda má začít míchání
-        if (zacaloMichani)
+        if (probihaMichani)
         {
             ESP_LOGI(TAG3, "Zahájeno míchání.");
-
+            char nazevPripravku[50];
+            char osetrovanaPlodina[81];
             double mnozstviPostriku = 0;
             double pomerMichani = 0;
             double potrebneMnozstviPripravku = 0;
-            char nazevPripravku[50];
-            char osetrovanaPlodina[81];
 
-            // Zajištění exkluzivního přístupu k displeji
-            if (xSemaphoreTake(Displej, portMAX_DELAY))
-            {
-                // Zpracování dat postřiku
-                zpracujPostrikData(idStruktury, &mnozstviPostriku, &pomerMichani, nazevPripravku, osetrovanaPlodina);
-
-                // Výpočet potřebného množství přípravku
-                potrebneMnozstviPripravku = mnozstviPostriku * pomerMichani;
-
-                // Aktualizace displeje s potřebným množstvím
-                aktualizujDisplejMnozstvi(potrebneMnozstviPripravku);
-
-                // Uvolnění semaforu displeje
-                xSemaphoreGive(Displej);
-            }
+            zpracujPostrikData(idStruktury, &mnozstviPostriku, &pomerMichani, nazevPripravku, osetrovanaPlodina);
+            potrebneMnozstviPripravku = mnozstviPostriku * pomerMichani;
 
             ESP_LOGI(TAG3, "Požadované množství přípravku: %.2f g", potrebneMnozstviPripravku);
-
-            // Zavolání funkce na zvážení potřebného množství přípravku
             zvazPripravek(potrebneMnozstviPripravku);
 
-            // Zajištění exkluzivního přístupu k displeji
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                // Čekání na spuštění vody uživatelem
                 cekejNaSpusteniVody();
 
                 if (zahajenoPousteniVodyTlacitkem)
                 {
                     ESP_LOGI(TAG3, "Spouštím napouštění vody.");
-                    napustVodu(1.4); // Spuštění napouštění vody s daným množstvím
+                    napustVodu(1.4);
                 }
-
-                // Čekání na potvrzení dokončení míchání uživatelem
                 cekejNaFinalizaciMichani(osetrovanaPlodina);
-
+                
                 // Aktualizace dne poslední aplikace postřiku
                 char denAplikace[6];
                 print_current_date(denAplikace, sizeof(denAplikace));
                 aktualizujDenAplikace(idStruktury, denAplikace);
 
-                // Uložení aktualizovaných dat postřiku do úložiště
                 ulozPostrikData();
-
-                // Resetování stavových proměnných
-                kvitujiFinaleMichani = false;
-                zacaloMichani = false;
-
-                // Uvolnění semaforu displeje
                 xSemaphoreGive(Displej);
             }
         }
-
-        // Malá prodleva pro uvolnění CPU
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        probihaMichani = false;
+        zahajenoPousteniVodyTlacitkem = false;
+        kvitujiFinaleMichani = false;
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 void mujTaskNaJadreJedna(void *pvParameter)
 {
+    ESP_LOGI(TAG2, "Spuštěn hlavni task");
     nactiPostrikData();
-    ESP_LOGI(TAG2, "PocetPostriku:%d", pocetPostriku);
-
     vTaskDelay(10 / portTICK_PERIOD_MS);
     while (1)
     {
-        if (!mamNecoKmichani())
+        if (!mamNecoKmichanipromenna)
         {
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
                 lcd_update(" CVUT FEL", 0);
-                lcd_update(" Tlacitka ISR", 1);
+                lcd_update(" Do the commit!", 1);
                 xSemaphoreGive(Displej);
             }
         }
-        else if (!zacaloMichani) // Tato podmínka nyní kontroluje, zda je třeba míchat a zda míchání ještě nezačalo
+        else if (!probihaMichani) // Tato podmínka nyní kontroluje, zda je třeba míchat a zda míchání ještě nezačalo
         {
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                lcd_update("Chces michat?", 0);
-                lcd_update("Tlacitko 2", 1);
+                lcd_update(" Chces michat?", 0);
+                lcd_update("", 1);
                 xSemaphoreGive(Displej);
-            }
-        }
-        if (mamNecoKmichani() && !zacaloMichani) // Nyní můžeme procházet postřiky pouze v případě, že je míchání potřeba
-        {
-            for (int i = 0; i < pocetPostriku; i++)
-            {
-                if (xSemaphoreTake(Displej, portMAX_DELAY))
-                {
-                    lcd_update("Chces michat?", 0);
-                    lcd_update("Tlacitko 2", 1);
-                    xSemaphoreGive(Displej);
-                }
             }
         }
         vTaskDelay(10 / portTICK_PERIOD_MS); // Malá prodleva pro uvolnění CPU
@@ -1336,7 +1337,7 @@ void app_main(void)
     configure_interrupt1();
     configure_interrupt2();
     configure_interrupt3();
-
+    konfiguraceTimeru();
     xTaskCreatePinnedToCore(
         mujTaskNaJadreJedna,   // Task function
         "mujTaskNaJadreJedna", // Task name
