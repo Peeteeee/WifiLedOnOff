@@ -1263,7 +1263,7 @@ void mujTaskNaJadreJedna(void *pvParameter)
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
                 lcd_update(" CVUT FEL", 0);
-                lcd_update(" PETR KUCERA", 1);
+                lcd_update(" Tlacitka ISR", 1);
                 xSemaphoreGive(Displej);
             }
         }
