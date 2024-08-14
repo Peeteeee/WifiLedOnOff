@@ -38,7 +38,11 @@ void configure_interrupt3()
 
 void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
 {
+<<<<<<< HEAD
     ESP_LOGI(TAG17, "Aktualizuji den aplikace pro id: %d na %s", idStruktury, denAplikace);
+=======
+    ESP_LOGI(TAG, "Aktualizuji den aplikace pro id: %d na %s", idStruktury, denAplikace);
+>>>>>>> 78b381cd0771fc5713816fd15099bb876a340836
 
     for (int j = 0; j < pocetPostriku; j++)
     {
