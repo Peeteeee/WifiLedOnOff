@@ -3,6 +3,7 @@
 
 #include "cJSON.h"
 #include "driver/gpio.h"
+#include <driver/i2c.h>
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include <esp_log.h>
@@ -17,28 +18,31 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "HD44780.h"
 #include <hx711.h>
 #include <inttypes.h>
-#include <lcd1602.h>
 #include "lwip/inet.h"
 #include <math.h>
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 
 #include <time.h>
-#define RS GPIO_NUM_2
-#define EN GPIO_NUM_4
-#define D4 GPIO_NUM_5
-#define D5 GPIO_NUM_21
-#define D6 GPIO_NUM_22
-#define D7 GPIO_NUM_23
+// #define RS GPIO_NUM_2
+// #define EN GPIO_NUM_4
+// #define D4 GPIO_NUM_5
+// #define D5 GPIO_NUM_21
+// #define D6 GPIO_NUM_22
+// #define D7 GPIO_NUM_23
+#define IN GPIO_NUM_27
+#define INH GPIO_NUM_33
 // 12, 13, 14, 15 ... JTAG
-#define tlacitko1 GPIO_NUM_25
-#define tlacitko2 GPIO_NUM_26
-#define tlacitko3 GPIO_NUM_33
-#define ledka GPIO_NUM_32
+#define tlacitko1 GPIO_NUM_25//tlacitko1
+#define tlacitko2 GPIO_NUM_26//tlacitko2
+#define ledka GPIO_NUM_32//led1
 #define FILE_PATH "/spiffs/uvodniStrana.html"
 #define FILE_PATH2 "/spiffs/vkladaniDat.html"
 #define FILE_PATH3 "/spiffs/zmenaDat.html"
@@ -49,7 +53,13 @@
 #define EXAMPLE_ESP_WIFI_PASS "cabracina128"
 #define MAX_DATA_LENGTH 256
 #define CHUNK_SIZE 1024
-#define LCD_MAX_CHARS 32
+#define LCD_MAX_CHARS 81
+
+#define LCD_ADDR 0x27
+#define SDA_PIN 21
+#define SCL_PIN 22
+#define LCD_COLS 20
+#define LCD_ROWS 4
 
 typedef struct
 {

@@ -27,10 +27,6 @@ void isrCancel(void *par)
 {
     gpio_set_level(ledka, 1);
 }
-void isrAux(void *par)
-{
-    gpio_set_level(ledka, 0);
-}
 void configure_interrupt1()
 {
     gpio_set_direction(tlacitko1, GPIO_MODE_INPUT);
@@ -44,17 +40,10 @@ void configure_interrupt2()
     gpio_set_intr_type(tlacitko2, GPIO_INTR_POSEDGE);
     gpio_isr_handler_add(tlacitko2, isrCancel, NULL);
 }
-void configure_interrupt3()
-{
-    gpio_set_direction(tlacitko3, GPIO_MODE_INPUT);
-    gpio_set_intr_type(tlacitko3, GPIO_INTR_POSEDGE);
-    gpio_isr_handler_add(tlacitko3, isrAux, NULL);
-}
 
 void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
 {
     ESP_LOGI(TAG17, "Aktualizuji den aplikace pro id: %d na %s", idStruktury, denAplikace);
-
     for (int j = 0; j < pocetPostriku; j++)
     {
         if (dataBazePostriku[j].id == idStruktury)
@@ -64,31 +53,32 @@ void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
             return;
         }
     }
-
     ESP_LOGE(TAG, "Nepodařilo se aktualizovat den aplikace pro id: %d. Postřik nebyl nalezen.", idStruktury);
 }
 void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
 {
     ESP_LOGI(TAG, "Čekám na potvrzení dokončení míchání...");
-
     while (!kvitujiFinaleMichani)
     {
         lcd_update(" Osetri: ", 0);
         lcd_update(osetrovanaPlodina, 1);
+        lcd_update("", 2);
+        lcd_update("", 3);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
     ESP_LOGI(TAG24, "Dokončení míchání potvrzeno.");
 }
 void cekejNaSpusteniVody()
 {
     ESP_LOGI(TAG, "Čekám na spuštění vody uživatelem...");
-
     while (!zahajenoPousteniVodyTlacitkem)
     {
-        lcd_update("Vysyp pripravek!", 0);
-        lcd_update("Mam pustit vodu?", 1);
+        lcd_update("  Vysyp pripravek!", 0);
+        lcd_update("", 1);
+        lcd_update("  Mam pustit vodu?", 2);
+        lcd_update("", 3);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
-
     ESP_LOGI(TAG, "Spuštění vody potvrzeno uživatelem.");
 }
 int delete_postrik(int id)
@@ -182,7 +172,7 @@ void konfiguraceTimeru(void)
         return;
     }
     // Spustit timer s periodou 1000 ms (1 sekunda)
-    esp_timer_start_periodic(kontrola_kmichani_timer, 500000); // 1000000 mikrosekund = 1 sekunda
+    esp_timer_start_periodic(kontrola_kmichani_timer, 100000); // 1000000 mikrosekund = 1 sekunda
 }
 void kontrola_kmichani_cb(void *arg)
 {
@@ -191,40 +181,32 @@ void kontrola_kmichani_cb(void *arg)
 }
 bool lcd_update(const char *text, int line)
 {
-    int offset = line * 16;
-    char retezec[17];
+    int offset = line * 20;
+    char retezec[21];
 
     // Check if the text is already displayed
-    if (strncmp(&lcd_buffer[offset], text, 16) == 0)
+    if (strncmp(&lcd_buffer[offset], text, 20) == 0)
     {
-        // ESP_LOGI(TAG, "Text is already displayed on line %d: %s", line, text);
+        //ESP_LOGI(TAG, "Text is already displayed on line %d: %s", line, text);
         return false;
     }
-
-    // ESP_LOGI(TAG, "Updating line %d with new text: %s", line, text);
+    //ESP_LOGI(TAG, "Updating line %d with new text: %s", line, text);
 
     // Clear the line before writing new text
-    lcd1602_set_cursor(line, 0); // Set cursor to the beginning of the line
-    // ESP_LOGI(TAG, "Clearing line %d", line);
-    lcd1602_write("                "); // Clear the line with spaces
+    LCD_setCursor(0, line); // Set cursor to the beginning of the line
+    //ESP_LOGI(TAG, "Clearing line %d", line);
+    LCD_writeStr("                    "); // Clear the line with spaces
 
     // Write new text to the display
-    lcd1602_set_cursor(line, 0);                    // Set cursor to the beginning of the line again
-    snprintf(retezec, sizeof(retezec), "%s", text); // Copy the text to a temporary buffer
-    // ESP_LOGI(TAG, "Writing new text to line %d: %s", line, retezec);
-    lcd1602_write(retezec);
+    LCD_setCursor(0, line);                            // Set cursor to the beginning of the line again
+    snprintf(retezec, sizeof(retezec), "%-20s", text); // Copy the text to a temporary buffer
+    //ESP_LOGI(TAG, "Writing new text to line %d: %s", line, retezec);
+    LCD_writeStr(retezec);
 
     // Update buffer
-    strncpy(&lcd_buffer[offset], text, 16);
+    strncpy(&lcd_buffer[offset], text, 20);
 
-    // Null-terminate the rest of the buffer if the text is shorter than 16 characters
-    for (int i = strlen(text); i < 16; i++)
-    {
-        lcd_buffer[offset + i] = '\0';
-    }
-
-    // ESP_LOGI(TAG, "Buffer updated for line %d: %s", line, &lcd_buffer[offset]);
-
+    //ESP_LOGI(TAG, "Buffer updated for line %d: %s", line, &lcd_buffer[offset]);
     return true;
 }
 bool mamNecoKmichani(void)
@@ -456,7 +438,7 @@ void print_current_time(char *buffer, size_t buffer_size)
 }
 void seradDatabaziPodleData()
 {
-    //porovnejDatumy();
+    // porovnejDatumy();
     ESP_LOGE(TAG12, "Radim DB podle data");
 }
 void tare()
@@ -529,8 +511,10 @@ void zvazPripravek(double gramu)
 {
     if (xSemaphoreTake(Displej, portMAX_DELAY))
     {
-        lcd_update(" Nuluji cekej!", 0);
+        lcd_update("   Nuluji cekej!", 0);
         lcd_update("", 1);
+        lcd_update("", 2);
+        lcd_update("", 3);
         xSemaphoreGive(Displej);
     }
     ESP_LOGI(TAG11, "Starting weighing process for %f grams", gramu);
@@ -565,15 +549,19 @@ void zvazPripravek(double gramu)
 
         // Format the weight data as a string
         char stringKzobrazeni[81];
-        char stringKzobrazeni2[17];
+        char stringKzobrazeni2[21];
+        char stringKzobrazeni3[21];
         snprintf(stringKzobrazeni, sizeof(stringKzobrazeni), "%s", dataBazePostriku[vratPoradoveCisloStrukturyVpoli(idStruktury)].nazev_pripravku);
-        snprintf(stringKzobrazeni2, sizeof(stringKzobrazeni2), "  %.2f gramu", gramu - dataProDisplay);
+        snprintf(stringKzobrazeni2, sizeof(stringKzobrazeni2), "   %.2f gramu", gramu - dataProDisplay);
+        snprintf(stringKzobrazeni3, sizeof(stringKzobrazeni3), "%.1fg pripravku:", gramu);
 
         // Update the display with the current weight
         if (xSemaphoreTake(Displej, portMAX_DELAY))
         {
-            lcd_update(stringKzobrazeni, 0);  // pripravek
-            lcd_update(stringKzobrazeni2, 1); // zbyvajici hmotnost
+            lcd_update(stringKzobrazeni3, 0);  // pripravek
+            lcd_update(stringKzobrazeni, 1);  // pripravek
+            lcd_update("   Zbyva dosypat:", 2); // zbyvajici hmotnost
+            lcd_update(stringKzobrazeni2, 3); // zbyvajici hmotnost
             xSemaphoreGive(Displej);
             // ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni);
         }
@@ -1219,7 +1207,6 @@ static httpd_handle_t start_webserver(void)
 void michaciProcedura(void *pvParameter)
 {
     ESP_LOGI(TAG3, "Spuštěna míchací procedura.");
-
     while (1)
     {
         // Kontrola, zda má začít míchání
@@ -1248,7 +1235,7 @@ void michaciProcedura(void *pvParameter)
                     napustVodu(1.4);
                 }
                 cekejNaFinalizaciMichani(osetrovanaPlodina);
-                
+
                 // Aktualizace dne poslední aplikace postřiku
                 char denAplikace[6];
                 print_current_date(denAplikace, sizeof(denAplikace));
@@ -1261,7 +1248,7 @@ void michaciProcedura(void *pvParameter)
         probihaMichani = false;
         zahajenoPousteniVodyTlacitkem = false;
         kvitujiFinaleMichani = false;
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
 void mujTaskNaJadreJedna(void *pvParameter)
@@ -1277,6 +1264,8 @@ void mujTaskNaJadreJedna(void *pvParameter)
             {
                 lcd_update(" CVUT FEL", 0);
                 lcd_update(" Do the commit!", 1);
+                lcd_update(" OK", 2);
+                lcd_update(" Michani!", 3);
                 xSemaphoreGive(Displej);
             }
         }
@@ -1284,12 +1273,14 @@ void mujTaskNaJadreJedna(void *pvParameter)
         {
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                lcd_update(" Chces michat?", 0);
+                lcd_update("  Chces michat?", 0);
                 lcd_update("", 1);
+                lcd_update("", 2);
+                lcd_update("", 3);
                 xSemaphoreGive(Displej);
             }
         }
-        vTaskDelay(10 / portTICK_PERIOD_MS); // Malá prodleva pro uvolnění CPU
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
 
@@ -1320,24 +1311,18 @@ void app_main(void)
     {
         printf("\nMutex nevytvoren\n");
     }
-    Tlacitko3 = xSemaphoreCreateMutex();
-    if (Tlacitko3 == NULL)
-    {
-        printf("\nMutex nevytvoren\n");
-    }
-
+    
     wifi_init_sta();
     setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
     tzset();
     obtain_time();
     init_spiffs();
     start_webserver();
-    lcd1602_init(RS, EN, D4, D5, D6, D7);
     gpio_set_direction(ledka, GPIO_MODE_OUTPUT);
     configure_interrupt1();
     configure_interrupt2();
-    configure_interrupt3();
     konfiguraceTimeru();
+    LCD_init(LCD_ADDR, SDA_PIN, SCL_PIN, LCD_COLS, LCD_ROWS);
     xTaskCreatePinnedToCore(
         mujTaskNaJadreJedna,   // Task function
         "mujTaskNaJadreJedna", // Task name
