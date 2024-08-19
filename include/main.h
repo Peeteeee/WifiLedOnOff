@@ -32,17 +32,14 @@
 
 #include <time.h>
 // #define RS GPIO_NUM_2
-// #define EN GPIO_NUM_4
-// #define D4 GPIO_NUM_5
-// #define D5 GPIO_NUM_21
-// #define D6 GPIO_NUM_22
+#define IN GPIO_NUM_4
+#define INH GPIO_NUM_5
 // #define D7 GPIO_NUM_23
-#define IN GPIO_NUM_27
-#define INH GPIO_NUM_33
 // 12, 13, 14, 15 ... JTAG
 #define tlacitko1 GPIO_NUM_25//tlacitko1
 #define tlacitko2 GPIO_NUM_26//tlacitko2
 #define ledka GPIO_NUM_32//led1
+#define ledka2 GPIO_NUM_35//led2
 #define FILE_PATH "/spiffs/uvodniStrana.html"
 #define FILE_PATH2 "/spiffs/vkladaniDat.html"
 #define FILE_PATH3 "/spiffs/zmenaDat.html"
@@ -147,7 +144,9 @@ int porovnejPostrikData(PostrikData *a, PostrikData *b);
 void prevodDatumu(char *datum);
 void pridatPostrik(PostrikData novyPostrik);
 void print_current_date(char *buffer, size_t buffer_size);
+void print_current_date2(char *buffer, size_t buffer_size);
 void print_current_time(char *buffer, size_t buffer_size);
+void print_current_time2(char *buffer, size_t buffer_size);
 void seradDatabaziPodleData();
 void tare();
 void ulozPostrikData();

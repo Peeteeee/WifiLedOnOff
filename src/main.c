@@ -426,6 +426,16 @@ void print_current_date(char *buffer, size_t buffer_size)
 
     strftime(buffer, buffer_size, "%d-%m", &timeinfo);
 }
+void print_current_date2(char *buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    strftime(buffer, buffer_size, "%d. %B %Y", &timeinfo);
+}
 void print_current_time(char *buffer, size_t buffer_size)
 {
     time_t now;
@@ -435,6 +445,16 @@ void print_current_time(char *buffer, size_t buffer_size)
     localtime_r(&now, &timeinfo);
 
     strftime(buffer, buffer_size, "%H:%M:%S", &timeinfo);
+}
+void print_current_time2(char *buffer, size_t buffer_size)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    strftime(buffer, buffer_size, "%H:%M", &timeinfo);
 }
 void seradDatabaziPodleData()
 {
@@ -1260,12 +1280,16 @@ void mujTaskNaJadreJedna(void *pvParameter)
     {
         if (!mamNecoKmichanipromenna)
         {
+            char cas[9];
+            char datum[21];
+            print_current_time2(cas, sizeof(cas));
+            print_current_date2(datum, sizeof(datum));
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
                 lcd_update(" CVUT FEL", 0);
-                lcd_update(" Do the commit!", 1);
-                lcd_update(" OK", 2);
-                lcd_update(" Michani!", 3);
+                lcd_update(" ", 1);
+                lcd_update(datum, 2);
+                lcd_update(cas, 3);
                 xSemaphoreGive(Displej);
             }
         }
