@@ -5,17 +5,25 @@
     <!-- Nastavení kódování znaků na UTF-8 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Zajistí, že stránka bude responzivní -->
-    <title>Upravte Data Postřiku</title>
+    <title>Upravte data postřiku</title>
     <style>
       /* CSS stylizace pro tmavší vzhled */
       body {
-        font-family: Arial, sans-serif; /* Nastavení písma pro celé tělo stránky */
+        scale: 0.8;
+
+        font-family: "Roboto", sans-serif;
         margin: 20px; /* Vnější okraje stránky */
-        background-color: #333; /* Tmavá barva pozadí stránky */
-        color: #fff; /* Světlá barva textu */
+        background-color: #121212; /* Tmavá barva pozadí stránky */
+        color: #e0e0e0; /* Světlá barva textu */
       }
       h1 {
         text-align: center; /* Zarovnání nadpisu do středu */
+        font-size: 2rem;
+        color: #0c65125b;
+        margin-bottom: 40px;
+        letter-spacing: 1.5px;
+        font-weight: 200;
+        text-shadow: 1px 1px 1px #957dad, 1px 2px 1px #957dad;
       }
       form {
         max-width: 400px; /* Maximální šířka formuláře */
@@ -23,7 +31,7 @@
         padding: 20px; /* Vnitřní okraje formuláře */
         border: 1px solid #555; /* Tmavší okraje formuláře */
         border-radius: 5px; /* Zaoblení rohů formuláře */
-        background-color: #444; /* Tmavší barva pozadí formuláře */
+        background-color: #1e1e1e; /* Tmavší barva pozadí formuláře */
       }
       label {
         display: block; /* Zobrazení každého štítku na novém řádku */
@@ -36,34 +44,35 @@
         margin-bottom: 15px; /* Spodní okraj vstupních polí */
         border: 1px solid #555; /* Tmavší okraje vstupních polí */
         border-radius: 3px; /* Zaoblení rohů vstupních polí */
-        background-color: #666; /* Tmavší barva pozadí vstupních polí */
+        background-color: #2c2c2c; /* Tmavší barva pozadí vstupních polí */
         color: #fff; /* Světlá barva textu ve vstupních polích */
         box-sizing: border-box; /* Zahrnutí vnitřních okrajů a okrajů do celkové šířky a výšky */
       }
       button {
         width: 100%; /* Šířka tlačítka */
         padding: 10px; /* Vnitřní okraje tlačítka */
-        background-color: #4caf50; /* Barva pozadí tlačítka */
+        background-color: #1a7b1d; /* Barva pozadí tlačítka */
         color: white; /* Barva textu tlačítka */
         border: none; /* Žádné okraje tlačítka */
         border-radius: 3px; /* Zaoblení rohů tlačítka */
         cursor: pointer; /* Změna kurzoru při najetí myší */
       }
       button:hover {
-        background-color: #45a049; /* Barva pozadí tlačítka při najetí myší */
+        background-color: #6fd4765b;
+        transform: translateY(-3px);
       }
     </style>
   </head>
   <body>
-    <h1>Upravte Data Postřiku</h1>
+    <h1>Upravte data postřiku</h1>
     <!-- Upravený nadpis -->
     <form id="dataForm">
       <!-- Formulář s ID dataForm -->
-      <label for="pripravekInput">Název Přípravku:</label>
+      <label for="pripravekInput">Název přípravku:</label>
       <input type="text" id="pripravekInput" name="pripravekInput" required />
       <!-- Textové pole pro přípravek -->
 
-      <label for="plodinaInput">Ošetřovaná Plodina:</label>
+      <label for="plodinaInput">Ošetřovaná plodina:</label>
       <input type="text" id="plodinaInput" name="plodinaInput" required />
       <!-- Textové pole pro plodinu -->
 

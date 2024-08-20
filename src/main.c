@@ -2,25 +2,39 @@
 
 void isrOk(void *par)
 {
+    if (preruseniPovoleno)
+    {
+        static uint32_t last_time = 0;                                    // Uložení času posledního stisku
+        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS; // Získání aktuálního času v ms
 
-    if (!probihaMichani && !zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
-    {
-        probihaMichani = true;
-    }
-    else if (probihaMichani && !zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
-    {
-        probihaMichani = true;
-        zahajenoPousteniVodyTlacitkem = true;
-    }
-    else if (probihaMichani && zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
-    {
-        probihaMichani = true;
-        zahajenoPousteniVodyTlacitkem = true;
-        kvitujiFinaleMichani = true;
-    }
-    else
-    {
-        printf("\n\n\nprobihaMichani && zahajenoPousteniVodyTlacitkem && kvitujiFinaleMichani = 1,1,1\n\n\n");
+        if (current_time - last_time > DEBOUNCE_TIME)
+        {                             // Kontrola, zda uplynul debounce čas
+            last_time = current_time; // Aktualizace času posledního stisku
+
+            if (!probihaMichani && !zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
+            {
+                probihaMichani = true;
+                preruseniPovoleno = false;
+            }
+            else if (probihaMichani && !zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
+            {
+                probihaMichani = true;
+                zahajenoPousteniVodyTlacitkem = true;
+                preruseniPovoleno = false;
+            }
+            else if (probihaMichani && zahajenoPousteniVodyTlacitkem && !kvitujiFinaleMichani)
+            {
+                probihaMichani = true;
+                zahajenoPousteniVodyTlacitkem = true;
+                kvitujiFinaleMichani = true;
+                preruseniPovoleno = false;
+            }
+            else
+            {
+                printf("\n\n\nprobihaMichani && zahajenoPousteniVodyTlacitkem && kvitujiFinaleMichani = 1,1,1\n\n\n");
+                preruseniPovoleno = false;
+            }
+        }
     }
 }
 void isrCancel(void *par)
@@ -57,6 +71,8 @@ void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
 }
 void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
 {
+    preruseniPovoleno = true;
+
     ESP_LOGI(TAG, "Čekám na potvrzení dokončení míchání...");
     while (!kvitujiFinaleMichani)
     {
@@ -66,11 +82,14 @@ void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
         lcd_update("", 3);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+
     ESP_LOGI(TAG24, "Dokončení míchání potvrzeno.");
 }
 void cekejNaSpusteniVody()
 {
+    preruseniPovoleno = true;
     ESP_LOGI(TAG, "Čekám na spuštění vody uživatelem...");
+
     while (!zahajenoPousteniVodyTlacitkem)
     {
         lcd_update("  Vysyp pripravek!", 0);
@@ -79,6 +98,7 @@ void cekejNaSpusteniVody()
         lcd_update("", 3);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+
     ESP_LOGI(TAG, "Spuštění vody potvrzeno uživatelem.");
 }
 int delete_postrik(int id)
@@ -187,26 +207,26 @@ bool lcd_update(const char *text, int line)
     // Check if the text is already displayed
     if (strncmp(&lcd_buffer[offset], text, 20) == 0)
     {
-        //ESP_LOGI(TAG, "Text is already displayed on line %d: %s", line, text);
+        // ESP_LOGI(TAG, "Text is already displayed on line %d: %s", line, text);
         return false;
     }
-    //ESP_LOGI(TAG, "Updating line %d with new text: %s", line, text);
+    // ESP_LOGI(TAG, "Updating line %d with new text: %s", line, text);
 
     // Clear the line before writing new text
     LCD_setCursor(0, line); // Set cursor to the beginning of the line
-    //ESP_LOGI(TAG, "Clearing line %d", line);
+    // ESP_LOGI(TAG, "Clearing line %d", line);
     LCD_writeStr("                    "); // Clear the line with spaces
 
     // Write new text to the display
     LCD_setCursor(0, line);                            // Set cursor to the beginning of the line again
     snprintf(retezec, sizeof(retezec), "%-20s", text); // Copy the text to a temporary buffer
-    //ESP_LOGI(TAG, "Writing new text to line %d: %s", line, retezec);
+    // ESP_LOGI(TAG, "Writing new text to line %d: %s", line, retezec);
     LCD_writeStr(retezec);
 
     // Update buffer
     strncpy(&lcd_buffer[offset], text, 20);
 
-    //ESP_LOGI(TAG, "Buffer updated for line %d: %s", line, &lcd_buffer[offset]);
+    // ESP_LOGI(TAG, "Buffer updated for line %d: %s", line, &lcd_buffer[offset]);
     return true;
 }
 bool mamNecoKmichani(void)
@@ -578,10 +598,10 @@ void zvazPripravek(double gramu)
         // Update the display with the current weight
         if (xSemaphoreTake(Displej, portMAX_DELAY))
         {
-            lcd_update(stringKzobrazeni3, 0);  // pripravek
-            lcd_update(stringKzobrazeni, 1);  // pripravek
+            lcd_update(stringKzobrazeni3, 0);   // pripravek
+            lcd_update(stringKzobrazeni, 1);    // pripravek
             lcd_update("   Zbyva dosypat:", 2); // zbyvajici hmotnost
-            lcd_update(stringKzobrazeni2, 3); // zbyvajici hmotnost
+            lcd_update(stringKzobrazeni2, 3);   // zbyvajici hmotnost
             xSemaphoreGive(Displej);
             // ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni);
         }
@@ -1226,12 +1246,14 @@ static httpd_handle_t start_webserver(void)
 
 void michaciProcedura(void *pvParameter)
 {
+
     ESP_LOGI(TAG3, "Spuštěna míchací procedura.");
     while (1)
     {
         // Kontrola, zda má začít míchání
         if (probihaMichani)
         {
+        preruseniPovoleno = true;
             ESP_LOGI(TAG3, "Zahájeno míchání.");
             char nazevPripravku[50];
             char osetrovanaPlodina[81];
@@ -1278,6 +1300,8 @@ void mujTaskNaJadreJedna(void *pvParameter)
     vTaskDelay(10 / portTICK_PERIOD_MS);
     while (1)
     {
+        printf("\nPRERUSENI: Probihamichani %d\nZahajenopousteni %d\nKvitace %d\n", probihaMichani, zahajenoPousteniVodyTlacitkem, kvitujiFinaleMichani);
+
         if (!mamNecoKmichanipromenna)
         {
             char cas[9];
@@ -1295,6 +1319,8 @@ void mujTaskNaJadreJedna(void *pvParameter)
         }
         else if (!probihaMichani) // Tato podmínka nyní kontroluje, zda je třeba míchat a zda míchání ještě nezačalo
         {
+            preruseniPovoleno = true;
+
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
                 lcd_update("  Chces michat?", 0);
@@ -1304,7 +1330,7 @@ void mujTaskNaJadreJedna(void *pvParameter)
                 xSemaphoreGive(Displej);
             }
         }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -1335,7 +1361,7 @@ void app_main(void)
     {
         printf("\nMutex nevytvoren\n");
     }
-    
+
     wifi_init_sta();
     setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
     tzset();

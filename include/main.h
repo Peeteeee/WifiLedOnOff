@@ -58,6 +58,8 @@
 #define LCD_COLS 20
 #define LCD_ROWS 4
 
+#define DEBOUNCE_TIME 200
+
 typedef struct
 {
     int id;
@@ -110,6 +112,7 @@ bool kvitujiFinaleMichani = false;
 bool chciTarovat = false;
 bool uzJevDatabazi = false;
 bool mamNecoKmichanipromenna = false;
+static bool preruseniPovoleno = false;
 void isrOk(void *par);
 void isrCancel(void *par);
 void isrAux(void *par);
