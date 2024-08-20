@@ -7,6 +7,22 @@
         "memory": "c",
         "new": "c",
         "numeric": "c",
-        "system_error": "c"
+        "system_error": "c",
+        "array": "c",
+        "cmath": "c",
+        "concepts": "c",
+        "functional": "c",
+        "iterator": "c",
+        "memory_resource": "c",
+        "optional": "c",
+        "type_traits": "c",
+        "random": "c",
+        "istream": "c",
+        "limits": "c",
+        "ostream": "c",
+        "streambuf": "c",
+        "string_view": "c",
+        "tuple": "c",
+        "typeinfo": "c"
     }
 }
