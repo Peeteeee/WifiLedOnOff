@@ -39,7 +39,16 @@ void isrOk(void *par)
 }
 void isrCancel(void *par)
 {
-    gpio_set_level(ledka, 1);
+    if (preruseniCancelPovoleno)
+    {
+
+        // gpio_set_level(ledka, 1);
+
+        probihaMichani = false;
+        zahajenoPousteniVodyTlacitkem = false;
+        kvitujiFinaleMichani = false;
+        preruseniCancelPovoleno = false;
+    }
 }
 void configure_interrupt1()
 {
@@ -72,9 +81,13 @@ void aktualizujDenAplikace(int idStruktury, const char *denAplikace)
 void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
 {
     preruseniPovoleno = true;
+    preruseniCancelPovoleno = true;
 
     ESP_LOGI(TAG, "Čekám na potvrzení dokončení míchání...");
-    while (!kvitujiFinaleMichani)
+    gpio_set_level(ledka, 1);
+    gpio_set_level(ledka2, 1);
+
+    while (!kvitujiFinaleMichani && probihaMichani)
     {
         lcd_update(" Osetri: ", 0);
         lcd_update(osetrovanaPlodina, 1);
@@ -88,13 +101,17 @@ void cekejNaFinalizaciMichani(char *osetrovanaPlodina)
 void cekejNaSpusteniVody()
 {
     preruseniPovoleno = true;
-    ESP_LOGI(TAG, "Čekám na spuštění vody uživatelem...");
+    preruseniCancelPovoleno = true;
 
-    while (!zahajenoPousteniVodyTlacitkem)
+    ESP_LOGI(TAG, "Čekám na spuštění vody uživatelem...");
+    gpio_set_level(ledka, 1);
+    gpio_set_level(ledka2, 1);
+
+    while (!zahajenoPousteniVodyTlacitkem && probihaMichani)
     {
-        lcd_update("  Vysyp pripravek!", 0);
+        lcd_update("   Staci!!!", 0);
         lcd_update("", 1);
-        lcd_update("  Mam pustit vodu?", 2);
+        lcd_update(" Mam pustit vodu?", 2);
         lcd_update("", 3);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
@@ -271,11 +288,138 @@ void nactiPostrikData()
 }
 void napustVodu(double litru)
 {
-    for (int i = 0; i < 5; i++)
+    // Set the LEDC peripheral configuration
+    example_ledc_init();
+
+    printf("\nnapousteni vody1\n");
+    // if (xSemaphoreTake(Displej, portMAX_DELAY))
+    // {
+    lcd_update("", 0);
+    lcd_update("  Nuluji cekej!", 1);
+    lcd_update("", 2);
+    lcd_update("", 3);
+    // xSemaphoreGive(Displej);
+    // }
+    ESP_LOGI(TAG11, "Starting weighing process for %f grams", litru);
+    printf("\nnapousteni vody2\n");
+    // Initialize the HX711 device structure
+    hx711_t dev = {
+        .dout = 19,
+        .pd_sck = 18,
+        .gain = HX711_GAIN_B_32};
+    printf("\nnapousteni vody3\n");
+    // Initialize device and check for errors
+    ESP_ERROR_CHECK(hx711_init(&dev));
+    tare2();
+    ESP_LOGI(TAG11, "Device initialized and tared");
+
+    bool jesteToNeniDost = true; // Variable to control the weighing loop
+    int32_t data = 0;            // Variable to store raw data from HX711
+    litru *= 1000;
+    gpio_set_level(INH, 1);
+    double staraMhotnost = 0;
+    int dutyCycle = 900;
+    preruseniCancelPovoleno = true;
+        gpio_set_level(ledka2, 1);
+
+    for (int i = 0; i < 3; i++)
     {
-        printf("\nNapoustim vodu:%d\n", i);
-        vTaskDelay(400 / portTICK_PERIOD_MS);
+        // Set duty to 50%
+        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 1023));
+        // Update duty to apply the new value
+        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        // Set duty to 50%
+        ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 1));
+        // Update duty to apply the new value
+        ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+
+    while (jesteToNeniDost && probihaMichani)
+    {
+        // Read median value from HX711
+        esp_err_t r = hx711_read_median(&dev, 6, &data);
+        if (r != ESP_OK)
+        {
+            ESP_LOGE(TAG11, "Could not read data2... error: %d (%s)", r, esp_err_to_name(r));
+            continue; // Skip the rest of the loop if data read fails
+        }
+        // Calculate the actual weight
+        double novaData = (double)data - ofsetek2;
+        double dataProDisplay = novaData / prevodniFaktorB < 0 ? -novaData / prevodniFaktorB : novaData / prevodniFaktorB;
+        // // Format the weight data as a string
+        char stringKzobrazeni2[21];
+        char stringKzobrazeni3[21];
+        snprintf(stringKzobrazeni2, sizeof(stringKzobrazeni2), "        %.0f ml", litru);
+        snprintf(stringKzobrazeni3, sizeof(stringKzobrazeni3), "        %.0f ml", litru - dataProDisplay);
+
+        // Update the display with the current weight
+        lcd_update("Chci:", 0);
+        lcd_update(stringKzobrazeni2, 1);
+        lcd_update("Zbyva:", 2);          // zbyvajici hmotnost
+        lcd_update(stringKzobrazeni3, 3); // zbyvajici hmotnost
+
+        ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni3);
+
+        printf("\nnapousteni vody.. litru = %f\n", litru);
+        printf("\nnapousteni vody.. dataprodisplay = %f\n", dataProDisplay);
+        printf("\nnapousteni vody.. staraHmotnost = %f\n", staraMhotnost);
+
+        if (dataProDisplay <= 0.8 * litru)
+        {
+            if (dataProDisplay - staraMhotnost < 25 && dutyCycle <= 1000)
+            {
+                dutyCycle += 10;
+                // Set duty to 50%
+                ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, dutyCycle));
+                // Update duty to apply the new value
+                ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            }
+            else
+            {
+                dutyCycle -= 20;
+                // Set duty to 50%
+                ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, dutyCycle));
+                // Update duty to apply the new value
+                ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            }
+        }
+        else if (dataProDisplay > 0.8 * litru)
+        {
+            if (dataProDisplay - staraMhotnost > 10)
+            {
+                dutyCycle -= 10;
+                // Set duty to 50%
+                ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, dutyCycle));
+                // Update duty to apply the new value
+                ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            }
+            else
+            {
+                dutyCycle += 10;
+                // Set duty to 50%
+                ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, dutyCycle));
+                // Update duty to apply the new value
+                ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            }
+        }
+        else
+        {
+            printf("\nneco se posralo\n");
+        }
+
+        staraMhotnost = dataProDisplay;
+        printf("\nduty cycle: %d\n", dutyCycle);
+        // Check if the desired weight is reached
+        if (dataProDisplay > litru - 25)
+        {
+            jesteToNeniDost = false;
+            ESP_LOGI(TAG11, "Desired weight reached: %f grams", dataProDisplay);
+        }
+    }
+    gpio_set_level(INH, 0);
+    ESP_LOGI(TAG11, "Weighing process completed");
 }
 void parse_json_for_id(const char *json_str, PostrikData *data)
 {
@@ -496,14 +640,34 @@ void tare()
         ESP_LOGE(TAG10, "Device not found... tarefce: %d (%s)\n", r, esp_err_to_name(r));
     }
     int32_t data = 0;
-    r = hx711_read_median(&dev, 20, &data); // musi byt sude
+    r = hx711_read_median(&dev, 10, &data); // musi byt sude
     if (r != ESP_OK)
     {
         ESP_LOGE(TAG10, "Could not read data... tarefce: %d (%s)\n", r, esp_err_to_name(r));
     }
     ofsetek1 = data;
-    chciTarovat = false;
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+}
+void tare2()
+{
+    hx711_t dev = {
+        .dout = 19,
+        .pd_sck = 18,
+        .gain = HX711_GAIN_B_32};
+
+    ESP_ERROR_CHECK(hx711_init(&dev));
+
+    esp_err_t r = hx711_wait(&dev, 800); // 200
+    if (r != ESP_OK)
+    {
+        ESP_LOGE(TAG10, "Device not found... tarefce: %d (%s)\n", r, esp_err_to_name(r));
+    }
+    int32_t data = 0;
+    r = hx711_read_median(&dev, 10, &data); // musi byt sude
+    if (r != ESP_OK)
+    {
+        ESP_LOGE(TAG10, "Could not read data... tarefce: %d (%s)\n", r, esp_err_to_name(r));
+    }
+    ofsetek2 = data;
 }
 void ulozPostrikData()
 {
@@ -551,8 +715,8 @@ void zvazPripravek(double gramu)
 {
     if (xSemaphoreTake(Displej, portMAX_DELAY))
     {
-        lcd_update("   Nuluji cekej!", 0);
-        lcd_update("", 1);
+        lcd_update("", 0);
+        lcd_update("  Nuluji cekej!", 1);
         lcd_update("", 2);
         lcd_update("", 3);
         xSemaphoreGive(Displej);
@@ -572,8 +736,10 @@ void zvazPripravek(double gramu)
 
     bool jesteToNeniDost = true; // Variable to control the weighing loop
     int32_t data = 0;            // Variable to store raw data from HX711
+    preruseniCancelPovoleno = true;
+    gpio_set_level(ledka2, 1);
 
-    while (jesteToNeniDost)
+    while (jesteToNeniDost && probihaMichani)
     {
         // Read median value from HX711
         esp_err_t r = hx711_read_median(&dev, 6, &data);
@@ -590,24 +756,27 @@ void zvazPripravek(double gramu)
         // Format the weight data as a string
         char stringKzobrazeni[81];
         char stringKzobrazeni2[21];
-        char stringKzobrazeni3[21];
-        snprintf(stringKzobrazeni, sizeof(stringKzobrazeni), "%s", dataBazePostriku[vratPoradoveCisloStrukturyVpoli(idStruktury)].nazev_pripravku);
-        snprintf(stringKzobrazeni2, sizeof(stringKzobrazeni2), "   %.2f gramu", gramu - dataProDisplay);
-        snprintf(stringKzobrazeni3, sizeof(stringKzobrazeni3), "%.1fg pripravku:", gramu);
+        // char stringKzobrazeni3[21];
+        snprintf(stringKzobrazeni, sizeof(stringKzobrazeni), "  %s", dataBazePostriku[vratPoradoveCisloStrukturyVpoli(idStruktury)].nazev_pripravku);
+        snprintf(stringKzobrazeni2, sizeof(stringKzobrazeni2), "  %.1f", gramu - dataProDisplay);
+        // snprintf(stringKzobrazeni3, sizeof(stringKzobrazeni3), "%.1fg pripravku:", gramu);
 
         // Update the display with the current weight
-        if (xSemaphoreTake(Displej, portMAX_DELAY))
+        if (probihaMichani)
         {
-            lcd_update(stringKzobrazeni3, 0);   // pripravek
-            lcd_update(stringKzobrazeni, 1);    // pripravek
-            lcd_update("   Zbyva dosypat:", 2); // zbyvajici hmotnost
-            lcd_update(stringKzobrazeni2, 3);   // zbyvajici hmotnost
-            xSemaphoreGive(Displej);
-            // ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni);
-        }
-        else
-        {
-            ESP_LOGW(TAG11, "Failed to take semaphore for display update");
+            if (xSemaphoreTake(Displej, portMAX_DELAY))
+            {
+                lcd_update("Nasyp pripravek:", 0);     // pripravek
+                lcd_update(stringKzobrazeni, 1);       // pripravek
+                lcd_update("Zbyva dosypat gramu:", 2); // zbyvajici hmotnost
+                lcd_update(stringKzobrazeni2, 3);      // zbyvajici hmotnost
+                xSemaphoreGive(Displej);
+                // ESP_LOGI(TAG11, "Display updated with weight: %s", stringKzobrazeni);
+            }
+            else
+            {
+                ESP_LOGW(TAG11, "Failed to take semaphore for display update");
+            }
         }
 
         // Check if the desired weight is reached
@@ -617,7 +786,21 @@ void zvazPripravek(double gramu)
             ESP_LOGI(TAG11, "Desired weight reached: %f grams", dataProDisplay);
         }
     }
+
+    if (xSemaphoreTake(Displej, portMAX_DELAY))
+    {
+        lcd_update("", 0);
+        lcd_update("", 1);
+        lcd_update("", 2);
+        lcd_update("     Staci!!!", 3);
+        xSemaphoreGive(Displej);
+    }
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+
     ESP_LOGI(TAG11, "Weighing process completed");
+}
+void zvazVodu(double litru)
+{
 }
 
 esp_err_t uvodniStranaKsicht_handler(httpd_req_t *req)
@@ -1244,6 +1427,29 @@ static httpd_handle_t start_webserver(void)
     return server;
 }
 
+static void example_ledc_init(void)
+{
+    // Prepare and then apply the LEDC PWM timer configuration
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode = LEDC_MODE,
+        .duty_resolution = LEDC_DUTY_RES,
+        .timer_num = LEDC_TIMER,
+        .freq_hz = LEDC_FREQUENCY, // Set output frequency at 4 kHz
+        .clk_cfg = LEDC_AUTO_CLK};
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and then apply the LEDC PWM channel configuration
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode = LEDC_MODE,
+        .channel = LEDC_CHANNEL,
+        .timer_sel = LEDC_TIMER,
+        .intr_type = LEDC_INTR_DISABLE,
+        .gpio_num = LEDC_OUTPUT_IO,
+        .duty = 0, // Set duty to 0%
+        .hpoint = 0};
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+}
+
 void michaciProcedura(void *pvParameter)
 {
 
@@ -1253,7 +1459,10 @@ void michaciProcedura(void *pvParameter)
         // Kontrola, zda má začít míchání
         if (probihaMichani)
         {
-        preruseniPovoleno = true;
+            gpio_set_level(ledka, 0);
+            gpio_set_level(ledka2, 0);
+
+            preruseniPovoleno = true;
             ESP_LOGI(TAG3, "Zahájeno míchání.");
             char nazevPripravku[50];
             char osetrovanaPlodina[81];
@@ -1270,20 +1479,29 @@ void michaciProcedura(void *pvParameter)
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
                 cekejNaSpusteniVody();
+                gpio_set_level(ledka, 0);
+                gpio_set_level(ledka2, 0);
 
                 if (zahajenoPousteniVodyTlacitkem)
                 {
                     ESP_LOGI(TAG3, "Spouštím napouštění vody.");
-                    napustVodu(1.4);
+                    napustVodu(mnozstviPostriku);
+                    // gpio_set_level(INH, 0);
                 }
                 cekejNaFinalizaciMichani(osetrovanaPlodina);
+                gpio_set_level(ledka, 0);
+                gpio_set_level(ledka2, 0);
 
-                // Aktualizace dne poslední aplikace postřiku
-                char denAplikace[6];
-                print_current_date(denAplikace, sizeof(denAplikace));
-                aktualizujDenAplikace(idStruktury, denAplikace);
+                if (probihaMichani)
+                {
 
-                ulozPostrikData();
+                    // Aktualizace dne poslední aplikace postřiku
+                    char denAplikace[6];
+                    print_current_date(denAplikace, sizeof(denAplikace));
+                    aktualizujDenAplikace(idStruktury, denAplikace);
+
+                    ulozPostrikData();
+                }
                 xSemaphoreGive(Displej);
             }
         }
@@ -1300,7 +1518,7 @@ void mujTaskNaJadreJedna(void *pvParameter)
     vTaskDelay(10 / portTICK_PERIOD_MS);
     while (1)
     {
-        printf("\nPRERUSENI: Probihamichani %d\nZahajenopousteni %d\nKvitace %d\n", probihaMichani, zahajenoPousteniVodyTlacitkem, kvitujiFinaleMichani);
+        // printf("\nPRERUSENI: Probihamichani %d\nZahajenopousteni %d\nKvitace %d\n", probihaMichani, zahajenoPousteniVodyTlacitkem, kvitujiFinaleMichani);
 
         if (!mamNecoKmichanipromenna)
         {
@@ -1310,7 +1528,7 @@ void mujTaskNaJadreJedna(void *pvParameter)
             print_current_date2(datum, sizeof(datum));
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                lcd_update(" CVUT FEL", 0);
+                lcd_update("     FEL CVUT ", 0);
                 lcd_update(" ", 1);
                 lcd_update(datum, 2);
                 lcd_update(cas, 3);
@@ -1323,8 +1541,10 @@ void mujTaskNaJadreJedna(void *pvParameter)
 
             if (xSemaphoreTake(Displej, portMAX_DELAY))
             {
-                lcd_update("  Chces michat?", 0);
-                lcd_update("", 1);
+                gpio_set_level(ledka, 1);
+
+                lcd_update("", 0);
+                lcd_update("  Chces michat?", 1);
                 lcd_update("", 2);
                 lcd_update("", 3);
                 xSemaphoreGive(Displej);
@@ -1369,6 +1589,8 @@ void app_main(void)
     init_spiffs();
     start_webserver();
     gpio_set_direction(ledka, GPIO_MODE_OUTPUT);
+    gpio_set_direction(ledka2, GPIO_MODE_OUTPUT);
+    gpio_set_direction(INH, GPIO_MODE_OUTPUT);
     configure_interrupt1();
     configure_interrupt2();
     konfiguraceTimeru();
@@ -1378,8 +1600,8 @@ void app_main(void)
         "mujTaskNaJadreJedna", // Task name
         2048,                  // Stack size
         NULL,                  // Parameters
-        1,                     // Priority
-        NULL,                  // Task handle
+        3,                     // Priority
+        &myTaskHandle,         // Task handle
         1                      // Core ID (0 or 1)
     );
     xTaskCreatePinnedToCore(
@@ -1387,7 +1609,7 @@ void app_main(void)
         "michaciProcedura", // Task name
         4096,               // Stack size
         NULL,               // Parameters
-        5,                  // Priority
+        4,                  // Priority
         NULL,               // Task handle
         1                   // Core ID (0 or 1)
     );

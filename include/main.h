@@ -4,6 +4,7 @@
 #include "cJSON.h"
 #include "driver/gpio.h"
 #include <driver/i2c.h>
+#include "driver/ledc.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include <esp_log.h>
@@ -31,15 +32,19 @@
 #include <sys/time.h>
 
 #include <time.h>
+
+void michaciProcedura(void *pvParameter);
+TaskHandle_t myTaskHandle = NULL;
+
 // #define RS GPIO_NUM_2
 #define IN GPIO_NUM_4
 #define INH GPIO_NUM_5
 // #define D7 GPIO_NUM_23
 // 12, 13, 14, 15 ... JTAG
-#define tlacitko1 GPIO_NUM_25//tlacitko1
-#define tlacitko2 GPIO_NUM_26//tlacitko2
+#define tlacitko1 GPIO_NUM_26//tlacitko1s
+#define tlacitko2 GPIO_NUM_25//tlacitko2
 #define ledka GPIO_NUM_32//led1
-#define ledka2 GPIO_NUM_35//led2
+#define ledka2 GPIO_NUM_27//led2
 #define FILE_PATH "/spiffs/uvodniStrana.html"
 #define FILE_PATH2 "/spiffs/vkladaniDat.html"
 #define FILE_PATH3 "/spiffs/zmenaDat.html"
@@ -60,6 +65,14 @@
 
 #define DEBOUNCE_TIME 200
 
+#define LEDC_TIMER              LEDC_TIMER_0
+#define LEDC_MODE               LEDC_LOW_SPEED_MODE
+#define LEDC_OUTPUT_IO          (4) // Define the output GPIO
+#define LEDC_CHANNEL            LEDC_CHANNEL_0
+#define LEDC_DUTY_RES           LEDC_TIMER_10_BIT // Set duty resolution to 13 bits
+#define LEDC_DUTY               (512) // Set duty to 50%. (2 ** 13) * 50% = 4096
+#define LEDC_FREQUENCY          (20000) // Frequency in Hertz. Set frequency at 4 kHz
+
 typedef struct
 {
     int id;
@@ -79,7 +92,7 @@ int pocetPostriku = 0;
 int32_t ofsetek1 = 0;
 int32_t ofsetek2 = 0;
 int prevodniFaktorA = 18070;
-int prevodniFaktorB = 1000;
+int prevodniFaktorB = 176;
 
 static const char *TAG = "HTTP_SERVER";
 static const char *TAG2 = "TASK_MUJ_TASK";
@@ -106,19 +119,19 @@ static const char *TAG22 = "zpracujPostrikData";
 static const char *TAG23 = "nahlasPostriky_handler";
 static const char *TAG24 = "cekejNaFinalizaciMichani";
 static const char *TAG25 = "jePostrikVdatabazi";
+
 bool probihaMichani = false;
 bool zahajenoPousteniVodyTlacitkem = false;
 bool kvitujiFinaleMichani = false;
-bool chciTarovat = false;
 bool uzJevDatabazi = false;
 bool mamNecoKmichanipromenna = false;
 static bool preruseniPovoleno = false;
+static bool preruseniCancelPovoleno = false;
+
 void isrOk(void *par);
 void isrCancel(void *par);
-void isrAux(void *par);
 void configure_interrupt1();
 void configure_interrupt2();
-void configure_interrupt3();
 
 void wifi_init_sta(void);
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
@@ -131,6 +144,7 @@ void aktualizujDenAplikace(int idStruktury, const char *denAplikace);
 void cekejNaFinalizaciMichani(char *osetrovanaPlodina);
 void cekejNaSpusteniVody();
 int delete_postrik(int id);
+static void example_ledc_init(void);
 bool extract_id_from_json(cJSON *json, int *id);
 int generate_id();
 bool jePostrikVdatabazi(PostrikData *postrik_data);
@@ -152,10 +166,12 @@ void print_current_time(char *buffer, size_t buffer_size);
 void print_current_time2(char *buffer, size_t buffer_size);
 void seradDatabaziPodleData();
 void tare();
+void tare2();
 void ulozPostrikData();
 int vratPoradoveCisloStrukturyVpoli(int id);
 void zpracujPostrikData(int idStruktury, double *mnozstviPostriku, double *pomerMichani, char *nazevPripravku, char *osetrovanaPlodina);
 void zvazPripravek(double gramu);
+void zvazVodu(double gramu);
 
 esp_err_t uvodniStranaKsicht_handler(httpd_req_t *req);
 esp_err_t nahlasPostriky_handler(httpd_req_t *req);
@@ -169,7 +185,6 @@ esp_err_t smazaniPostriku_handler(httpd_req_t *req);
 SemaphoreHandle_t Displej;
 SemaphoreHandle_t Tlacitko1;
 SemaphoreHandle_t Tlacitko2;
-SemaphoreHandle_t Tlacitko3;
 SemaphoreHandle_t mutexPostriku;
 
 PostrikData postrik_data = {.id = 0, .mnozstvi_postriku = 0.0, .pomer_michani = 0.0, .denPosledniAplikacePostriku = "02-02"};
